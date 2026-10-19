@@ -26,11 +26,13 @@ import {
   FastForward,
   Clock,
   Hourglass,
+  RotateCcw,
 } from 'lucide-react';
 
 export default function App() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isCreating, setIsCreating] = useState(true);
+  const [showExitTitleModal, setShowExitTitleModal] = useState(false);
   const [charName, setCharName] = useState('');
   const [charGender, setCharGender] = useState<Gender>('male');
   const [selectedBirthDistrict, setSelectedBirthDistrict] = useState<number | 'RANDOM'>('RANDOM');
@@ -46,7 +48,7 @@ export default function App() {
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [gameState?.logs]);
+  }, [gameState?.logs, gameState?.activeEncounter]);
 
   // 전역 스페이스바(Space) 일시정지 / 재개 단축키
   useEffect(() => {
@@ -168,7 +170,7 @@ export default function App() {
             };
             updated = {
               ...updated,
-              logs: [ambientLog, ...updated.logs].slice(0, 50),
+              logs: [...updated.logs, ambientLog].slice(-100),
             };
           }
           return updated;
@@ -226,7 +228,8 @@ export default function App() {
 
       // 2. AI를 통한 서사 강화 (API Key가 설정되어 있을 경우)
       if (geminiApiKey.trim()) {
-        const latestLog = updatedState.logs[0];
+        const latestIdx = updatedState.logs.length - 1;
+        const latestLog = updatedState.logs[latestIdx];
         const aiResult = await AINarrativeDirector.generateNarrativeWithAI(
           gameState,
           choice,
@@ -234,7 +237,7 @@ export default function App() {
           { apiKey: geminiApiKey, model: 'gemini-1.5-flash' }
         );
 
-        updatedState.logs[0] = {
+        updatedState.logs[latestIdx] = {
           ...latestLog,
           text: aiResult.narrative,
           internalMonologue: aiResult.internalMonologue,
@@ -451,6 +454,15 @@ export default function App() {
       {/* Game Header with Time Controls & Spacebar Hint */}
       <header className="game-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+          <button
+            type="button"
+            className="title-return-btn"
+            onClick={() => setShowExitTitleModal(true)}
+            title="타이틀 화면으로 복귀 (캐릭터 새로 생성)"
+          >
+            <RotateCcw size={12} />
+            <span>타이틀</span>
+          </button>
           <span className="brand-title">THE CITY</span>
           <div className="time-header-wrapper">
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -807,32 +819,9 @@ export default function App() {
                 )}
               </div>
             ))}
-            <div ref={logsEndRef} />
-          </div>
-
-          {/* Action / Encounter Center Panel */}
-          <div className="action-panel">
-            {gameState.isGameOver ? (
-              <div style={{ textAlign: 'center', padding: '1.5rem', background: 'rgba(214,40,40,0.15)', borderRadius: '8px', border: '1px solid var(--pm-crimson)' }}>
-                <Skull size={36} color="var(--pm-crimson)" style={{ margin: '0 auto 0.6rem' }} />
-                <h3 style={{ fontSize: '1.2rem', color: 'var(--pm-crimson)', marginBottom: '0.4rem', fontFamily: 'var(--font-serif)' }}>
-                  생의 종착 (Life Extinguished)
-                </h3>
-                <p style={{ fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '1rem' }}>
-                  {gameState.gameOverReason}
-                </p>
-                <button
-                  type="button"
-                  className="action-submit-btn"
-                  style={{ background: 'var(--pm-crimson)', borderColor: 'var(--pm-crimson)' }}
-                  onClick={() => setIsCreating(true)}
-                >
-                  새로운 생애 시작하기 (New Life)
-                </button>
-              </div>
-            ) : gameState.activeEncounter ? (
-              /* 돌발 인카운터 발생 시 나타나는 상황별 동적 선택지 카드 */
-              <div className={`active-encounter-box ${gameState.activeEncounter.category === 'NIGHT_SWEEPER_TERROR' ? 'crisis' : ''}`}>
+            {/* 지나간 상황은 위로 밀려 올라가고, 새로운 돌발 인카운터와 선택지는 피드 최하단에 표시 */}
+            {gameState.activeEncounter && (
+              <div className={`active-encounter-box in-log-feed ${gameState.activeEncounter.category === 'NIGHT_SWEEPER_TERROR' ? 'crisis' : ''}`}>
                 <div className="encounter-header">
                   <span className={`encounter-category-badge ${gameState.activeEncounter.category === 'NIGHT_SWEEPER_TERROR' ? 'crisis' : ''}`}>
                     {gameState.activeEncounter.category === 'RELATIONSHIP_DISCOVERY' && '♥ 인연의 조우'}
@@ -883,14 +872,39 @@ export default function App() {
                   ))}
                 </div>
               </div>
+            )}
+            <div ref={logsEndRef} />
+          </div>
+
+          {/* Action Footer Bar: Flow status & custom input or game over */}
+          <div className="action-panel">
+            {gameState.isGameOver ? (
+              <div style={{ textAlign: 'center', padding: '1.2rem', background: 'rgba(214,40,40,0.15)', borderRadius: '8px', border: '1px solid var(--pm-crimson)' }}>
+                <Skull size={32} color="var(--pm-crimson)" style={{ margin: '0 auto 0.4rem' }} />
+                <h3 style={{ fontSize: '1.1rem', color: 'var(--pm-crimson)', marginBottom: '0.3rem', fontFamily: 'var(--font-serif)' }}>
+                  생의 종착 (Life Extinguished)
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-main)', marginBottom: '0.8rem' }}>
+                  {gameState.gameOverReason}
+                </p>
+                <button
+                  type="button"
+                  className="action-submit-btn"
+                  style={{ background: 'var(--pm-crimson)', borderColor: 'var(--pm-crimson)' }}
+                  onClick={() => setIsCreating(true)}
+                >
+                  새로운 생애 시작하기 (New Life)
+                </button>
+              </div>
             ) : (
-              /* 인카운터가 없을 때: 고정 4개 선택지 대신 실시간 흐름 상태 표시 바 */
               <div>
                 <div className="ambient-flow-bar">
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <span className="pulse-indicator" style={{ background: gameState.timeSpeed === 'PAUSED' ? 'var(--pm-crimson)' : 'var(--pm-cyan)' }} />
                     <span>
-                      {gameState.timeSpeed === 'PAUSED'
+                      {gameState.activeEncounter
+                        ? '돌발 인카운터가 발생했습니다. 위 피드에서 선택지를 결단하십시오.'
+                        : gameState.timeSpeed === 'PAUSED'
                         ? '도시의 시간이 멈춰 있습니다. [Space] 키를 눌러 시간을 흐르게 하십시오.'
                         : '도시의 시간이 흐르는 중입니다... (1분 = 1달) 거리의 인카운터를 주시하십시오.'}
                     </span>
@@ -902,7 +916,7 @@ export default function App() {
                 </div>
 
                 {/* Free Text Input (자유 행동/대화 입력) */}
-                <form className="custom-action-form" onSubmit={handleCustomActionSubmit} style={{ marginTop: '0.8rem' }}>
+                <form className="custom-action-form" onSubmit={handleCustomActionSubmit} style={{ marginTop: '0.6rem' }}>
                   <input
                     type="text"
                     className="custom-input"
@@ -1245,6 +1259,56 @@ export default function App() {
                 onClick={() => setApiKeyModalOpen(false)}
               >
                 닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Title Return Confirmation Modal */}
+      {showExitTitleModal && (
+        <div className="creation-overlay" style={{ zIndex: 2000 }} onClick={() => setShowExitTitleModal(false)}>
+          <div
+            className="creation-card"
+            style={{ maxWidth: '440px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.8rem' }}>
+              <RotateCcw size={20} color="var(--pm-crimson)" />
+              <h3 style={{ fontSize: '1.15rem', color: 'var(--text-main)', fontFamily: 'var(--font-serif)' }}>
+                타이틀로 복귀
+              </h3>
+            </div>
+
+            <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '1.4rem' }}>
+              현재 진행 중인 도시의 생애를 중단하고 메인 화면(캐릭터 생성)으로 돌아가시겠습니까?
+              <br />
+              <span style={{ color: '#ff6b6b', fontSize: '0.78rem' }}>
+                * 저장되지 않은 진행 데이터는 초기화됩니다.
+              </span>
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="action-submit-btn"
+                style={{ background: 'var(--pm-crimson)', borderColor: 'var(--pm-crimson)', color: '#fff' }}
+                onClick={() => {
+                  setGameState(null);
+                  setIsCreating(true);
+                  timeKeeperRef.current.reset(0);
+                  setShowExitTitleModal(false);
+                }}
+              >
+                타이틀로 돌아가기
+              </button>
+              <button
+                type="button"
+                className="action-submit-btn"
+                style={{ background: '#242838', borderColor: '#343a50' }}
+                onClick={() => setShowExitTitleModal(false)}
+              >
+                계속 플레이
               </button>
             </div>
           </div>

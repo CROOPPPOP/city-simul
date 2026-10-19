@@ -167,7 +167,7 @@ export class CoreEngine {
             isGameOver = true;
             gameOverReason = 'T사 시간세 체납 및 개인 시간 고갈로 인해 3등급 시간 징수관에게 신체 시간을 완전히 압류당해 영구 박제(미라화)되었습니다.';
           } else if (p.timeBalanceHours === 0) {
-            logs.unshift({
+            logs.push({
               id: `log_tcorp_warning_${Date.now()}`,
               year: tick.newYear,
               month: tick.newMonth,
@@ -194,7 +194,7 @@ export class CoreEngine {
     // 2. 1년 경과 (도시력 나이 증가)
     if (tick.monthPassed && tick.newYear !== state.year) {
       p.age += 1;
-      logs.unshift({
+      logs.push({
         id: `log_year_${Date.now()}`,
         year: tick.newYear,
         month: tick.newMonth,
@@ -215,7 +215,7 @@ export class CoreEngine {
       timeOfDay: tick.newTimeOfDay,
       monthProgress: tick.monthProgress,
       player: p,
-      logs: logs.slice(0, 50),
+      logs: logs.slice(-100),
       isGameOver,
       gameOverReason: gameOverReason || state.gameOverReason,
     };
@@ -243,7 +243,7 @@ export class CoreEngine {
       pendingSituation: situation,
       timeSpeed: 'PAUSED',
       isAutoPaused: true,
-      logs: [newLog, ...state.logs].slice(0, 50),
+      logs: [...state.logs, newLog].slice(-100),
     };
   }
 
@@ -527,7 +527,7 @@ export class CoreEngine {
     return {
       ...state,
       player: p,
-      logs: [newLog, ...state.logs].slice(0, 50),
+      logs: [...state.logs, newLog].slice(-100),
       currentChoices: [], // 인카운터 완료 시 선택지 닫음
       activeEncounter: null, // 인카운터 모달 닫기
       pendingSituation: null, // 월간 상황 닫기
@@ -562,7 +562,7 @@ export class CoreEngine {
       previousTimeSpeed: state.timeSpeed !== 'PAUSED' ? state.timeSpeed : '1X',
       timeSpeed: 'PAUSED',
       isAutoPaused: true,
-      logs: [newLog, ...state.logs].slice(0, 50),
+      logs: [...state.logs, newLog].slice(-100),
     };
   }
 
