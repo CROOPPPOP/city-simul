@@ -503,3 +503,224 @@ body {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Time Controls & Calendar Bar */
+.time-header-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.time-control-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(18, 22, 32, 0.9);
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.speed-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.speed-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.speed-btn.active {
+  background: rgba(0, 180, 216, 0.2);
+  border-color: var(--pm-cyan);
+  color: var(--pm-cyan);
+  font-weight: bold;
+  box-shadow: 0 0 8px var(--pm-cyan-glow);
+}
+
+.speed-btn.paused {
+  background: rgba(214, 40, 40, 0.2);
+  border-color: var(--pm-crimson);
+  color: #ff6b6b;
+  font-weight: bold;
+}
+
+/* Month Progress Bar (1 min = 1 month) */
+.month-progress-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 220px;
+}
+
+.month-progress-bar-bg {
+  flex: 1;
+  height: 6px;
+  background: rgba(38, 44, 62, 0.6);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  position: relative;
+}
+
+.month-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--pm-cyan), var(--pm-gold));
+  border-radius: 3px;
+  transition: width 0.1s linear;
+  box-shadow: 0 0 8px var(--pm-cyan-glow);
+}
+
+/* T-Corp (20구) 특화 스타일 */
+.tcorp-clock-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(212, 163, 115, 0.12);
+  border: 1px solid #d4a373;
+  color: #faedcd;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 0 10px rgba(212, 163, 115, 0.2);
+}
+
+.tcorp-frozen-warning {
+  animation: tcorpBlink 1.5s infinite;
+  background: rgba(214, 40, 40, 0.25) !important;
+  border-color: #ff4d6d !important;
+  color: #ffb3ba !important;
+}
+
+@keyframes tcorpBlink {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px rgba(214, 40, 40, 0.6)); }
+  50% { opacity: 0.65; filter: none; }
+}
+
+.frozen-monochrome-filter {
+  filter: grayscale(85%) contrast(1.15) brightness(0.9);
+  transition: filter 0.8s ease;
+}
+
+/* 월간 상황 및 동적 선택지 모달 (Monthly Situation Modal) */
+.monthly-situation-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 12, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  backdrop-filter: blur(10px);
+  animation: fadeIn 0.3s ease;
+}
+
+.monthly-situation-modal {
+  width: 90%;
+  max-width: 780px;
+  background: #0d1017;
+  border: 1px solid #3a445d;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 30px rgba(0, 180, 216, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.monthly-situation-modal.crisis-mode {
+  border-color: var(--pm-crimson);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 30px rgba(214, 40, 40, 0.25);
+}
+
+.situation-tag-badge {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  border-radius: 4px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  display: inline-block;
+  margin-bottom: 0.5rem;
+}
+
+.situation-lore-text {
+  font-family: var(--font-serif);
+  font-size: 0.98rem;
+  line-height: 1.7;
+  color: #e2eafc;
+  background: rgba(22, 27, 38, 0.6);
+  padding: 1.2rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--pm-cyan);
+}
+
+.carmen-whisper-card {
+  background: linear-gradient(135deg, rgba(157, 78, 221, 0.15), rgba(214, 40, 40, 0.15));
+  border: 1px solid #9d4edd;
+  padding: 0.9rem 1.2rem;
+  border-radius: 8px;
+  font-style: italic;
+  font-size: 0.85rem;
+  color: #e0aaff;
+  box-shadow: 0 0 15px rgba(157, 78, 221, 0.25);
+}
+
+.monthly-choices-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.monthly-choice-card {
+  background: rgba(20, 24, 35, 0.85);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.monthly-choice-card:hover {
+  background: rgba(30, 37, 54, 0.95);
+  border-color: var(--pm-cyan);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 180, 216, 0.2);
+}
+
+.monthly-choice-card.danger-extreme:hover {
+  border-color: var(--pm-crimson);
+  box-shadow: 0 6px 20px rgba(214, 40, 40, 0.3);
+}
+
+.choice-cost-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.cost-pill {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+}
+

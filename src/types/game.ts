@@ -81,7 +81,9 @@ export interface PlayerCharacter {
   // 자원
   ahn: number; // 화폐 (안)
   housingTaxDaysLeft: number; // 합법 거주구역 거주세 남은 일수 (0이면 쫓겨나서 뒷골목의 밤에 노출)
-  timeBalanceHours?: number; // T사 구역일 때의 시간 잔여량
+  timeBalanceHours?: number; // T사 구역일 때의 시간 잔여량 (시간세 및 활동용)
+  timeTaxDueDays?: number; // T사 시간세 납부 기한(일)
+  isTimeFrozen?: boolean; // T사 시간 체납으로 인한 흑백 동결/지연 상태
 
   // 신체 및 개조
   hp: number;
@@ -119,35 +121,59 @@ export interface PlayerCharacter {
 }
 
 export type TimeOfDay = 'MORNING' | 'AFTERNOON' | 'EVENING' | 'NIGHT_SWEEPER';
-
-export interface GameState {
-  year: number; // 도시력 (예: 984)
-  day: number;
-  timeOfDay: TimeOfDay;
-  player: PlayerCharacter;
-  logs: NarrativeLog[];
-  currentChoices: ActionChoice[];
-  isGameOver: boolean;
-  gameOverReason?: string;
-}
+export type TimeSpeed = 'PAUSED' | '1X' | '2X' | '4X';
 
 export interface ActionChoice {
   id: string;
   text: string;
-  actionType: 'REST' | 'WORK' | 'EXPLORE' | 'COMBAT' | 'TRAIN_SHIN' | 'ROMANCE' | 'PAY_TAX' | 'CUSTOM';
+  description?: string;
+  actionType: 'REST' | 'WORK' | 'EXPLORE' | 'COMBAT' | 'TRAIN_SHIN' | 'ROMANCE' | 'PAY_TAX' | 'PAY_TIME_TAX' | 'BORROW_TIME' | 'BUY_TIME' | 'CUSTOM' | 'EVENT_CHOICE';
   dangerLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
   costAhn?: number;
   costSp?: number;
+  costHp?: number;
+  costTimeHours?: number; // T사 시간 소모
+  rewardTimeHours?: number; // T사 시간 획득
+  rewardAhn?: number;
   customPrompt?: string;
+}
+
+export interface MonthlySituation {
+  month: number;
+  year: number;
+  title: string;
+  loreDescription: string;
+  atmosphere: string;
+  urgency: 'NORMAL' | 'CRISIS' | 'OPPORTUNITY';
+  carmenWhisper?: string;
+  choices: ActionChoice[];
+}
+
+export interface GameState {
+  year: number; // 도시력 (예: 984)
+  month: number; // 1 ~ 12월
+  day: number; // 1 ~ 30일
+  timeOfDay: TimeOfDay;
+  timeSpeed: TimeSpeed;
+  monthProgress: number; // 0.0 ~ 1.0 (60초 중 경과율)
+  isAutoPaused: boolean;
+  player: PlayerCharacter;
+  logs: NarrativeLog[];
+  currentChoices: ActionChoice[];
+  pendingSituation: MonthlySituation | null;
+  isGameOver: boolean;
+  gameOverReason?: string;
 }
 
 export interface NarrativeLog {
   id: string;
+  year?: number;
+  month?: number;
   day: number;
   timeOfDay: TimeOfDay;
   districtId: number;
   text: string;
   internalMonologue?: string;
   carmenWhisper?: string; // SP가 매우 낮을 때 카르멘이 건네는 유혹의 말
-  eventTag?: string; // 예: "뒷골목의 밤", "신(心)의 태동", "엄지 카포의 심문"
+  eventTag?: string; // 예: "뒷골목의 밤", "T사 시간세 징수", "신(心)의 태동", "엄지 카포의 심문"
 }

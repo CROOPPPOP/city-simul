@@ -6,7 +6,9 @@ import type {
   TimeOfDay,
   Gender,
   BodyParts,
+  MonthlySituation,
 } from '../types/game';
+import type { TimeTickResult } from './timeKeeper';
 import { DISTRICTS_DATA } from './districtsData';
 import { generateInitialRelationship } from './relationshipsData';
 
@@ -33,6 +35,8 @@ export class CoreEngine {
 
     const initialRelationship = generateInitialRelationship(gender, birthDistrictId);
 
+    const isTCorp = birthDistrictId === 20;
+
     const player: PlayerCharacter = {
       name: name.trim() || (gender === 'female' ? '엘레나' : '칼리온'),
       gender,
@@ -43,7 +47,9 @@ export class CoreEngine {
       isInsideNest: isNestBorn,
       ahn: isNestBorn ? 1800 : 450,
       housingTaxDaysLeft: isNestBorn ? 25 : 3, // 뒷골목은 3일 남음 (거주세 압박)
-      timeBalanceHours: birthDistrictId === 20 ? 16 : undefined,
+      timeBalanceHours: isTCorp ? 48 : undefined,
+      timeTaxDueDays: isTCorp ? 14 : undefined,
+      isTimeFrozen: false,
       hp: 100,
       maxHp: 100,
       bodyParts: initialBodyParts,
@@ -86,30 +92,161 @@ export class CoreEngine {
     };
 
     const district = DISTRICTS_DATA[birthDistrictId];
-    const initialLogText = isNestBorn
+    let initialLogText = isNestBorn
       ? `당신은 ${district.wingName} 관할 둥지에서 비교적 온실 같은 어린 시절을 보냈습니다. 그러나 날개의 특이점을 유지하기 위해 이면에 도사린 끔찍한 생체 실험과 매달 징수되는 살인적인 세금의 공포는 둥지의 깃털들에게도 예외가 아닙니다. 이제 당신은 스스로의 발로 도시의 잔혹한 생태계에 첫발을 디뎠습니다.`
       : `당신은 ${district.wingName} 관할 ${district.id}구 뒷골목의 차가운 흙바닥에서 태어났습니다. 사방에서 울려 퍼지는 비명과 폭력, 매일 밤 3시 13분에 시작되는 청소부들의 살육을 피해 살아남는 것만이 유일한 법이었습니다. 당신에게 남은 것은 손에 쥔 무기 한 자루와, 고작 3일 치밖에 남지 않은 거주세뿐입니다.`;
 
+    if (isTCorp) {
+      initialLogText += `\n[T사 고유 규칙] 이곳에서는 시간이 곧 세금이자 생명입니다. 잔여 시간: 48시간. 시간세 납부 기한: 14일.`;
+    }
+
     const initialLog: NarrativeLog = {
       id: `log_init_${Date.now()}`,
+      year: 984,
+      month: 1,
       day: 1,
       timeOfDay: 'MORNING',
       districtId: birthDistrictId,
       text: initialLogText,
       internalMonologue: `살아남아야 한다. 이 빌어먹을 도시에서 내장을 쏟아내지 않으려면...`,
-      eventTag: isNestBorn ? '둥지의 깃털' : '뒷골목의 탄생',
+      eventTag: isNestBorn ? '둥지의 깃털' : isTCorp ? 'T사 시간의 톱니바퀴' : '뒷골목의 탄생',
     };
 
     const initialChoices = CoreEngine.generateChoices(player, 'MORNING', 1);
 
     return {
       year: 984,
+      month: 1,
       day: 1,
       timeOfDay: 'MORNING',
+      timeSpeed: '1X',
+      monthProgress: 0,
+      isAutoPaused: false,
       player,
       logs: [initialLog],
       currentChoices: initialChoices,
+      pendingSituation: null,
       isGameOver: false,
+    };
+  }
+
+  /**
+   * 실시간 TimeKeeper 틱 처리 (일/월/시간대 전이 및 T사 시간세 반영)
+   */
+  static processTimeTick(state: GameState, tick: TimeTickResult): GameState {
+    if (state.isGameOver) return state;
+
+    const p = { ...state.player, bodyParts: { ...state.player.bodyParts } };
+    const logs = [...state.logs];
+    let isGameOver = false;
+    let gameOverReason = '';
+
+    // 1. 일차 경과 시 처리 (식비 차감, 거주세 차감, T사 시간세)
+    if (tick.dayPassed) {
+      p.housingTaxDaysLeft -= 1;
+
+      // 식비 40안 차감
+      if (p.ahn >= 40) {
+        p.ahn -= 40;
+      } else {
+        p.hp = Math.max(0, p.hp - 8);
+        p.sp = Math.max(-45, p.sp - 8);
+      }
+
+      // 20구 T사(Time Track) 시간 소모 및 시간세 감사
+      if (p.currentDistrictId === 20) {
+        p.timeBalanceHours = (p.timeBalanceHours ?? 24) - 1;
+        if (p.timeTaxDueDays !== undefined) {
+          p.timeTaxDueDays -= 1;
+        }
+
+        // 시간 고갈 상태 판정 (흑백화 / 정지)
+        if (p.timeBalanceHours <= 0) {
+          p.isTimeFrozen = true;
+          p.hp = Math.max(0, p.hp - 4); // 신체 동결 및 괴사
+          p.sp = Math.max(-45, p.sp - 6);
+
+          if (p.timeBalanceHours <= -24) {
+            isGameOver = true;
+            gameOverReason = 'T사 시간세 체납 및 개인 시간 고갈로 인해 3등급 시간 징수관에게 신체 시간을 완전히 압류당해 영구 박제(미라화)되었습니다.';
+          } else if (p.timeBalanceHours === 0) {
+            logs.unshift({
+              id: `log_tcorp_warning_${Date.now()}`,
+              year: tick.newYear,
+              month: tick.newMonth,
+              day: tick.newDay,
+              timeOfDay: tick.newTimeOfDay,
+              districtId: 20,
+              text: '[T사 비상 경보] 개인 시간 잔여량이 0시간에 도달했습니다! 신체가 흑백으로 탈색되며 굳어가고 있습니다. 즉시 시간을 보충하지 않으면 시간 징수관이 출동합니다!',
+              internalMonologue: '몸이... 느려진다... 손이 잿빛으로 변하고 있어...!',
+              eventTag: '시간 고갈 위기',
+            });
+          }
+        } else {
+          p.isTimeFrozen = false;
+        }
+      }
+
+      // 체력 0 판정
+      if (p.hp <= 0) {
+        isGameOver = true;
+        gameOverReason = '극심한 부상과 기아로 인해 뒷골목의 차가운 바닥에서 사망하였습니다.';
+      }
+    }
+
+    // 2. 1년 경과 (도시력 나이 증가)
+    if (tick.monthPassed && tick.newYear !== state.year) {
+      p.age += 1;
+      logs.unshift({
+        id: `log_year_${Date.now()}`,
+        year: tick.newYear,
+        month: tick.newMonth,
+        day: tick.newDay,
+        timeOfDay: tick.newTimeOfDay,
+        districtId: p.currentDistrictId,
+        text: `[도시력 ${tick.newYear}년 새해] 잔혹한 도시의 톱니바퀴 속에서 기적적으로 또 1년을 생존해냈습니다. 당신의 나이는 이제 ${p.age}세입니다.`,
+        internalMonologue: `또 1년을 살아남았다. 언제까지 이 숨이 붙어있을지는 모르겠지만.`,
+        eventTag: '도시 생존 1주년',
+      });
+    }
+
+    return {
+      ...state,
+      year: tick.newYear,
+      month: tick.newMonth,
+      day: tick.newDay,
+      timeOfDay: tick.newTimeOfDay,
+      monthProgress: tick.monthProgress,
+      player: p,
+      logs: logs.slice(0, 50),
+      isGameOver,
+      gameOverReason: gameOverReason || state.gameOverReason,
+    };
+  }
+
+  /**
+   * 월간 사건 모달 열기 및 일시정지
+   */
+  static openMonthlySituation(state: GameState, situation: MonthlySituation): GameState {
+    const newLog: NarrativeLog = {
+      id: `log_situation_${Date.now()}`,
+      year: situation.year,
+      month: situation.month,
+      day: state.day,
+      timeOfDay: state.timeOfDay,
+      districtId: state.player.currentDistrictId,
+      text: `[${situation.year}년 ${situation.month}월: ${situation.title}]\n${situation.loreDescription}`,
+      internalMonologue: situation.atmosphere,
+      carmenWhisper: situation.carmenWhisper,
+      eventTag: '월간 주요 사건',
+    };
+
+    return {
+      ...state,
+      pendingSituation: situation,
+      timeSpeed: 'PAUSED',
+      isAutoPaused: true,
+      logs: [newLog, ...state.logs].slice(0, 50),
     };
   }
 
@@ -119,9 +256,11 @@ export class CoreEngine {
   static executeAction(state: GameState, choice: ActionChoice): GameState {
     if (state.isGameOver) return state;
 
-    const p = { ...state.player };
-    let newDay = state.day;
-    let newTime = state.timeOfDay;
+    const p = { ...state.player, bodyParts: { ...state.player.bodyParts } };
+    const newDay = state.day;
+    const newMonth = state.month;
+    const newYear = state.year;
+    const newTime = state.timeOfDay;
     let narrative = '';
     let monologue = '';
     let carmenWhisper: string | undefined = undefined;
@@ -137,16 +276,63 @@ export class CoreEngine {
       p.sp = Math.max(-45, p.sp - 4); // 신 유지 시 SP 소모
     }
 
-    // 1. 행동 타입별 룰 판정
+    // 선택지의 기본 파라미터 적용 (Ahn, HP, SP, Time)
+    if (choice.costAhn) p.ahn = Math.max(0, p.ahn - choice.costAhn);
+    if (choice.costHp) p.hp = Math.max(0, p.hp - choice.costHp);
+    if (choice.costSp) p.sp = Math.max(-45, p.sp - choice.costSp);
+    if (choice.costTimeHours && p.timeBalanceHours !== undefined) {
+      p.timeBalanceHours -= choice.costTimeHours;
+    }
+    if (choice.rewardAhn) p.ahn += choice.rewardAhn;
+    if (choice.rewardTimeHours && p.timeBalanceHours !== undefined) {
+      p.timeBalanceHours += choice.rewardTimeHours;
+    }
+
+    // 행동 타입별 룰 판정
     switch (choice.actionType) {
+      case 'PAY_TIME_TAX': {
+        const cost = choice.costAhn ?? 450;
+        p.timeBalanceHours = (p.timeBalanceHours ?? 0) + (choice.rewardTimeHours ?? 72);
+        p.timeTaxDueDays = 30;
+        p.isTimeFrozen = false;
+        p.sp = Math.min(45, p.sp + 10);
+        narrative = `T사 20구 세무국 창구에서 ${cost}안을 지불하고 72시간의 정규 시간 배터리를 충전했습니다. 째깍거리는 황동 보증서가 발급되며 시간세 납부 기한이 30일 연장되었습니다.`;
+        monologue = `적어도 한 달 동안은 징수관들이 들이닥쳐 내 시간을 압류할 일은 없다.`;
+        eventTag = 'T사 시간세 납부';
+        break;
+      }
+
+      case 'BORROW_TIME': {
+        const hours = choice.rewardTimeHours ?? 48;
+        p.timeBalanceHours = (p.timeBalanceHours ?? 0) + hours;
+        p.sp = Math.max(-45, p.sp - 15);
+        p.isTimeFrozen = false;
+        narrative = `뒷골목의 악명 높은 시간 전당포에서 사채업자에게 ${hours}시간의 고리대금 시간을 대출받았습니다. 푸르스름한 시간 용액이 혈관으로 주입되며 일시적인 활력이 돕니다.`;
+        monologue = `다음 달엔 세 배로 갚아야 한다... 갚지 못하면 내 심장을 떼어가겠지.`;
+        eventTag = '고리대금 시간 대출';
+        break;
+      }
+
+      case 'BUY_TIME': {
+        const hours = choice.rewardTimeHours ?? 36;
+        p.timeBalanceHours = (p.timeBalanceHours ?? 0) + hours;
+        p.isTimeFrozen = false;
+        narrative = `암시장에서 ${choice.costAhn ?? 300}안을 지불하고 ${hours}시간의 정제되지 않은 시간 앰플을 구입했습니다.`;
+        monologue = `시간이 곧 목숨이다. 조금이라도 더 비축해둬야 해.`;
+        eventTag = '시간 앰플 구매';
+        break;
+      }
+
       case 'WORK': {
         const gradeBonus = typeof p.fixerGrade === 'number' ? (10 - p.fixerGrade) * 2 : p.fixerGrade === 'COLOR' ? 24 : 2;
         const roll = Math.floor(Math.random() * 20) + 1 + gradeBonus;
-        const earnedAhn = 280 + roll * 15;
-        p.ahn += earnedAhn;
+        const earnedAhn = choice.rewardAhn ?? (280 + roll * 15);
+        if (!choice.rewardAhn) p.ahn += earnedAhn;
         p.sp = Math.max(-45, p.sp - 6);
 
-        narrative = `의뢰를 완수하여 ${earnedAhn}안을 벌어들였습니다. 피와 땀으로 얼룩진 지폐를 세며, 도시의 톱니바퀴로서 하루를 소모했습니다.`;
+        narrative = choice.description
+          ? `${choice.text} 완료: ${choice.description} (+${earnedAhn}안)`
+          : `의뢰를 완수하여 ${earnedAhn}안을 벌어들였습니다. 피와 땀으로 얼룩진 지폐를 세며, 도시의 톱니바퀴로서 하루를 소모했습니다.`;
         monologue = `손끝에 묻은 피는 닦으면 그만이다. 중요한 건 오늘치 안(Ahn)을 손에 넣었다는 것.`;
         eventTag = '생존을 위한 노동';
         break;
@@ -179,14 +365,14 @@ export class CoreEngine {
       case 'EXPLORE': {
         const exploreRoll = Math.floor(Math.random() * 100);
         if (exploreRoll < 40) {
-          // 공방 부품/자원 획득
-          const foundAhn = Math.floor(Math.random() * 250) + 100;
-          p.ahn += foundAhn;
-          narrative = `${district.id}구 뒷골목의 쓰레기 더미 사이에서 버려진 지갑과 공방 부품을 건졌습니다. (+${foundAhn}안)`;
+          const foundAhn = choice.rewardAhn ?? (Math.floor(Math.random() * 250) + 100);
+          if (!choice.rewardAhn) p.ahn += foundAhn;
+          narrative = choice.description
+            ? `${choice.text} 탐색 성공: ${choice.description} (+${foundAhn}안)`
+            : `${district.id}구 뒷골목의 쓰레기 더미 사이에서 버려진 지갑과 공방 부품을 건졌습니다. (+${foundAhn}안)`;
           monologue = `죽은 자는 돈이 필요 없다. 살아남은 자만이 챙길 뿐.`;
           eventTag = '폐허 수색';
         } else if (exploreRoll < 75) {
-          // 폭력배 조우 소규모 교전
           const damage = Math.max(5, 20 - (p.hasShin ? 10 : 0));
           p.hp = Math.max(0, p.hp - damage);
           p.sp = Math.max(-45, p.sp - 10);
@@ -194,7 +380,6 @@ export class CoreEngine {
           monologue = `숨 쉴 틈도 없이 칼이 날아든다. 이게 도시의 일상이다.`;
           eventTag = '골목 칼부림';
         } else {
-          // 이색적인 로어 이벤트
           p.sp = Math.max(-45, p.sp - 15);
           narrative = `${district.wingName}의 특이점 잔재가 골목 구석에서 기괴하게 박동하는 광경을 목격했습니다. 설명할 수 없는 혐오감에 머리가 쪼개질 듯 아파옵니다.`;
           monologue = `저런 끔찍한 것을 바탕으로 날개는 번영을 누리고 있던 것인가.`;
@@ -204,7 +389,6 @@ export class CoreEngine {
       }
 
       case 'COMBAT': {
-        // 합(Clash) 판정
         const playerRoll = Math.floor(Math.random() * 10) + p.weapon.damage + shinBonus + p.mangLevel * 4;
         const enemyRoll = Math.floor(Math.random() * 15) + 12;
 
@@ -221,7 +405,6 @@ export class CoreEngine {
           p.hp = Math.max(0, p.hp - damage);
           p.sp = Math.max(-45, p.sp - 20);
 
-          // 사지 손상 확률
           if (p.hp < 40 && p.bodyParts.leftArm === 'healthy' && Math.random() < 0.4) {
             p.bodyParts.leftArm = 'severed';
             narrative = `[합 패배 & 중상!] 적의 무자비한 궤적에 왼팔이 절단되었습니다! 극심한 출혈과 쇼크로 비명을 질렀습니다.`;
@@ -237,9 +420,7 @@ export class CoreEngine {
       }
 
       case 'TRAIN_SHIN': {
-        // 신(心) 습득 도전 or 단련
         if (!p.hasShin) {
-          // 습득 조건 판정
           const canAwaken = p.sp <= -15 || Math.random() < 0.35;
           if (canAwaken) {
             p.hasShin = true;
@@ -255,7 +436,6 @@ export class CoreEngine {
             eventTag = '수련 실패';
           }
         } else {
-          // 이미 신을 습득한 상태: 망(望)의 축적 기회 탐색
           p.sp = Math.min(45, p.sp + 10);
           narrative = `신(心)의 호흡을 정렬하며 내면의 오라를 안정시켰습니다. 극한의 상황에서 타오를 감정의 불꽃을 조용히 다듬습니다.`;
           monologue = `차분하게 흐른다. 이 감정을 더 강하게 벼려야 한다.`;
@@ -265,7 +445,6 @@ export class CoreEngine {
       }
 
       case 'ROMANCE': {
-        // 인연과의 교류 및 위기 구출
         if (p.relationships.length > 0) {
           const npc = p.relationships[0];
           npc.affection = Math.min(100, npc.affection + 15);
@@ -278,7 +457,6 @@ export class CoreEngine {
             monologue = `나에게도 지키고 싶은 사람이 생겼다. 그 사실 하나가 심장을 다시 뛰게 만든다.`;
             eventTag = '♥ 맹세와 연인';
 
-            // 연인을 지키겠다는 갈망으로 1망(望) 각성 가능
             if (p.hasShin && p.mangLevel === 0) {
               p.mangLevel = 1;
               narrative += ` [1망(望) 개화!] 사랑과 지키고자 하는 갈망(渇望)이 노란 고리가 되어 오른팔에 응축됩니다!`;
@@ -292,6 +470,13 @@ export class CoreEngine {
         break;
       }
 
+      case 'EVENT_CHOICE': {
+        narrative = choice.description || `${choice.text}을(를) 완수했습니다.`;
+        monologue = `결단을 내렸다. 앞으로 나아갈 뿐이다.`;
+        eventTag = '사건 결단';
+        break;
+      }
+
       case 'CUSTOM': {
         narrative = choice.customPrompt || `선택한 행동을 신중하게 실행에 옮겼습니다.`;
         monologue = `어떤 결과가 돌아오든, 선택은 내가 내렸다.`;
@@ -300,7 +485,7 @@ export class CoreEngine {
       }
     }
 
-    // 2. 카르멘의 속삭임 (SP가 -30 이하로 폭락했을 때)
+    // 카르멘의 속삭임 (SP가 -30 이하일 때)
     if (p.sp <= -30) {
       p.distortionProgress = Math.min(100, p.distortionProgress + 15);
       carmenWhisper = `"...참으로 가련하구나. 왜 이 잔혹한 도시의 도덕과 규율에 얽매여 고통받고 있니? 네 안의 가장 순수한 욕망만을 남기고 모든 것을 내려놓으렴. 너 자신이 되는 거야..."`;
@@ -310,57 +495,16 @@ export class CoreEngine {
       }
     }
 
-    // 3. 체력 0 판정
+    // 체력 0 판정
     if (p.hp <= 0) {
       isGameOver = true;
       gameOverReason = '치명적인 외상으로 인해 뒷골목의 차가운 바닥에서 사망하였습니다.';
     }
 
-    // 4. 시간 전이 (MORNING -> AFTERNOON -> EVENING -> NIGHT_SWEEPER -> MORNING)
-    const timeOrder: TimeOfDay[] = ['MORNING', 'AFTERNOON', 'EVENING', 'NIGHT_SWEEPER'];
-    const currentIndex = timeOrder.indexOf(state.timeOfDay);
-    if (currentIndex < 3) {
-      newTime = timeOrder[currentIndex + 1];
-    } else {
-      newTime = 'MORNING';
-      newDay += 1;
-
-      // 자정 전환 처리: 식비 차감 및 거주세 1일 감소
-      p.housingTaxDaysLeft -= 1;
-      if (p.ahn >= 40) {
-        p.ahn -= 40;
-      } else {
-        p.hp = Math.max(0, p.hp - 10);
-        p.sp = Math.max(-45, p.sp - 10);
-      }
-    }
-
-    // 5. 뒷골목의 밤 (03:13 ~ 04:34) 특별 위험 판정
-    if (newTime === 'NIGHT_SWEEPER') {
-      if (p.isInsideNest) {
-        narrative += `\n[둥지의 심야] 둥지의 거대한 방벽 너머에서 뒷골목의 밤이 시작되었습니다. 창문 밖으로 붉은 경보등이 회전하지만, 둥지 내부는 고요합니다.`;
-      } else {
-        if (p.housingTaxDaysLeft <= 0) {
-          // 거주세 미납으로 노출됨! 청소부 습격
-          const escapeRoll = Math.floor(Math.random() * 20) + (p.hasShin ? 5 : 0);
-          if (escapeRoll >= 12) {
-            p.hp = Math.max(10, p.hp - 35);
-            p.sp = Math.max(-45, p.sp - 25);
-            narrative += `\n[03:13 뒷골목의 밤 - 청소부 조우!] 거주세 체납으로 문이 잠긴 피난처 밖에서 청소부 무리에게 발각되었습니다! 액체 인간들의 갈고리를 피해 필사적으로 도주하여 간신히 쓰레기통 속에 숨었습니다.`;
-            monologue = `쉭쉭거리는 가위 소리와 기름 냄새... 죽을 뻔했다...`;
-            eventTag = '청소부의 밤 생환';
-          } else {
-            isGameOver = true;
-            gameOverReason = '뒷골목의 밤, 청소부의 갈고리에 찔려 액체 연료 탱크로 용해되었습니다.';
-          }
-        } else {
-          narrative += `\n[03:13 뒷골목의 밤] 합법 거주구역의 철문을 잠그고 숨을 죽입니다. 바깥 골목에서는 청소부들이 배회하며 거주민들을 해체하는 끔찍한 소리가 들려옵니다.`;
-        }
-      }
-    }
-
     const newLog: NarrativeLog = {
       id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      year: newYear,
+      month: newMonth,
       day: newDay,
       timeOfDay: newTime,
       districtId: p.currentDistrictId,
@@ -374,21 +518,23 @@ export class CoreEngine {
 
     return {
       ...state,
-      day: newDay,
-      timeOfDay: newTime,
       player: p,
-      logs: [newLog, ...state.logs].slice(0, 50), // 최신 50개 보존
+      logs: [newLog, ...state.logs].slice(0, 50),
       currentChoices: nextChoices,
+      pendingSituation: null, // 모달 닫기
+      isAutoPaused: false,
+      timeSpeed: state.timeSpeed === 'PAUSED' ? '1X' : state.timeSpeed, // 행동 후 시간 재개
       isGameOver,
       gameOverReason,
     };
   }
 
   /**
-   * 상황에 맞는 동적 선택지 3~4개 생성
+   * 상황에 맞는 동적 기본 선택지 생성
    */
   static generateChoices(player: PlayerCharacter, time: TimeOfDay, _day: number): ActionChoice[] {
     const choices: ActionChoice[] = [];
+    const isTCorp = player.currentDistrictId === 20;
 
     if (time === 'NIGHT_SWEEPER') {
       if (player.housingTaxDaysLeft <= 0) {
@@ -419,6 +565,19 @@ export class CoreEngine {
         });
       }
       return choices;
+    }
+
+    // T사 전용 즉각 행동 옵션 (시간세 압박 시)
+    if (isTCorp && ((player.timeBalanceHours ?? 24) <= 24 || (player.timeTaxDueDays ?? 7) <= 3)) {
+      choices.push({
+        id: 'tcorp_quick_pay',
+        text: `T사 세무국에 시간세 납부 (잔여: ${player.timeBalanceHours}시간 / 기한: ${player.timeTaxDueDays}일)`,
+        description: '450안을 내고 72시간을 즉시 충전합니다.',
+        actionType: 'PAY_TIME_TAX',
+        dangerLevel: 'LOW',
+        costAhn: 450,
+        rewardTimeHours: 72,
+      });
     }
 
     // 일반 시간대 선택지
