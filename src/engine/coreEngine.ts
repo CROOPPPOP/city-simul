@@ -13,7 +13,7 @@ import { DISTRICTS_DATA } from './districtsData';
 
 export class CoreEngine {
   /**
-   * 새로운 캐릭터 및 초기 게임 상태 생성
+   * 새로운 캐릭터 및 초기 게임 상태 생성 (8~10세 유소년기로 시작)
    */
   static createCharacter(name: string, gender: Gender): GameState {
     // 26개 구 중 랜덤 선택 (1, 2, 3구 머리 직할구는 출생 확률이 낮음)
@@ -22,6 +22,9 @@ export class CoreEngine {
 
     // 15% 확률로 둥지 출생, 85% 확률로 뒷골목 출생
     const isNestBorn = Math.random() < 0.15;
+
+    // 시작 나이: 8~10세 중 랜덤 (기본 9세)
+    const startAge = 8 + Math.floor(Math.random() * 3);
 
     const initialBodyParts: BodyParts = {
       head: 'healthy',
@@ -37,18 +40,19 @@ export class CoreEngine {
     const player: PlayerCharacter = {
       name: name.trim() || (gender === 'female' ? '엘레나' : '칼리온'),
       gender,
-      age: 20,
+      age: startAge,
+      growthStage: 'CHILD', // 8~12세 유소년
       birthDistrictId,
       isNestBorn,
       currentDistrictId: birthDistrictId,
       isInsideNest: isNestBorn,
-      ahn: isNestBorn ? 1800 : 450,
-      housingTaxDaysLeft: isNestBorn ? 25 : 3, // 뒷골목은 3일 남음 (거주세 압박)
-      timeBalanceHours: isTCorp ? 48 : undefined,
-      timeTaxDueDays: isTCorp ? 14 : undefined,
+      ahn: isNestBorn ? 400 : 80, // 아이의 주머니에 든 푼돈
+      housingTaxDaysLeft: isNestBorn ? 30 : 5, // 뒷골목은 5일 남음 (거주세 압박)
+      timeBalanceHours: isTCorp ? 24 : undefined,
+      timeTaxDueDays: isTCorp ? 7 : undefined,
       isTimeFrozen: false,
-      hp: 100,
-      maxHp: 100,
+      hp: 50,
+      maxHp: 50,
       bodyParts: initialBodyParts,
       prostheticsRatio: 0,
       tattoo: {
@@ -59,16 +63,16 @@ export class CoreEngine {
       },
       weapon: isNestBorn
         ? {
-            name: '츠바이식 수련용 세검',
-            workshop: '정규 공방 보급품',
-            damage: 14,
-            description: '날이 잘 다듬어진 표준 규격 검.',
+            name: '가문의 연습용 호신 봉',
+            workshop: '정규 공방 유소년용',
+            damage: 6,
+            description: '가문에서 호신용으로 쥐여준 가벼운 훈련용 봉.',
           }
         : {
-            name: '날이 이빠진 정육도',
-            workshop: '뒷골목 자작 무기',
-            damage: 8,
-            description: '녹슬고 거칠게 갈아낸 조잡한 칼날.',
+            name: '녹슨 쇠파이프',
+            workshop: '뒷골목 자작 폐품',
+            damage: 4,
+            description: '쓰레기 더미에서 주워 손잡이에 낡은 붕대를 감은 쇠파이프.',
           },
       sp: 0,
       hasShin: false,
@@ -77,8 +81,8 @@ export class CoreEngine {
       egoProgress: 0,
       distortionProgress: 0,
       path: isNestBorn ? 'WING_FEATHER' : 'FIXER',
-      fixerGrade: isNestBorn ? undefined : 9,
-      relationships: [], // 인연은 기본 제공이 아닌 인카운터를 통해 맺어감
+      fixerGrade: undefined, // 17세 이전 유소년기에는 면허 미보유
+      relationships: [],
       taboo: {
         ai_violation: 0,
         clone_7days: 0,
@@ -90,11 +94,11 @@ export class CoreEngine {
 
     const district = DISTRICTS_DATA[birthDistrictId];
     let initialLogText = isNestBorn
-      ? `당신은 ${district.wingName} 관할 둥지에서 비교적 온실 같은 어린 시절을 보냈습니다. 그러나 날개의 특이점을 유지하기 위해 이면에 도사린 끔찍한 생체 실험과 매달 징수되는 살인적인 세금의 공포는 둥지의 깃털들에게도 예외가 아닙니다. 이제 당신은 스스로의 발로 도시의 잔혹한 생태계에 첫발을 디뎠습니다.`
-      : `당신은 ${district.wingName} 관할 ${district.id}구 뒷골목의 차가운 흙바닥에서 태어났습니다. 사방에서 울려 퍼지는 비명과 폭력, 매일 밤 3시 13분에 시작되는 청소부들의 살육을 피해 살아남는 것만이 유일한 법이었습니다. 당신에게 남은 것은 손에 쥔 무기 한 자루와, 고작 3일 치밖에 남지 않은 거주세뿐입니다.`;
+      ? `당신은 ${district.wingName} 관할 둥지에서 태어난 ${startAge}살 아이입니다. 비록 둥지의 보호막 아래 따뜻한 옷을 입고 있지만, 매달 부모님을 옥죄는 살인적인 주거세와 둥지 이면의 음산한 분위기는 어린 당신의 가슴에도 차가운 공포로 맺힙니다.`
+      : `당신은 ${district.wingName} 관할 ${district.id}구 뒷골목의 차가운 시멘트 바닥에서 태어난 ${startAge}살 아이입니다. 사방에서 어른들의 고함과 칼부림이 오가고, 매일 새벽 3시 13분이면 청소부들이 들이닥치는 지옥 같은 거리에서 당신은 오직 작은 몸을 웅크린 채 살아남는 법을 배워야 합니다. 손에는 주워든 쇠파이프 한 자루뿐입니다.`;
 
     if (isTCorp) {
-      initialLogText += `\n[T사 고유 규칙] 이곳에서는 시간이 곧 세금이자 생명입니다. 잔여 시간: 48시간. 시간세 납부 기한: 14일.`;
+      initialLogText += `\n[T사 고유 규칙] 이곳에서는 시간조차 어린아이에게 자비를 베풀지 않습니다. 잔여 개인 시간: 24시간. 시간세 납부 기한: 7일.`;
     }
 
     const initialLog: NarrativeLog = {
@@ -102,25 +106,30 @@ export class CoreEngine {
       year: 984,
       month: 1,
       day: 1,
+      hour: 8,
+      minute: 0,
       timeOfDay: 'MORNING',
       districtId: birthDistrictId,
       text: initialLogText,
-      internalMonologue: `살아남아야 한다. 이 빌어먹을 도시에서 내장을 쏟아내지 않으려면...`,
-      eventTag: isNestBorn ? '둥지의 깃털' : isTCorp ? 'T사 시간의 톱니바퀴' : '뒷골목의 탄생',
+      internalMonologue: `너무 춥고 배고프다... 어떻게든 살아남아야 해. 어른들에게 짓밟히지 않으려면...`,
+      eventTag: isNestBorn ? '둥지의 유소년' : isTCorp ? 'T사 시간의 톱니바퀴' : '뒷골목의 부랑아',
     };
 
     return {
       year: 984,
       month: 1,
       day: 1,
+      hour: 8,
+      minute: 0,
       timeOfDay: 'MORNING',
       timeSpeed: '1X',
       previousTimeSpeed: '1X',
+      dayProgress: 8 / 24,
       monthProgress: 0,
       isAutoPaused: false,
       player,
       logs: [initialLog],
-      currentChoices: [], // 고정 선택지 제거, 인카운터 발생 시 동적으로 제공
+      currentChoices: [],
       activeEncounter: null,
       pendingSituation: null,
       isGameOver: false,
@@ -128,7 +137,7 @@ export class CoreEngine {
   }
 
   /**
-   * 실시간 TimeKeeper 틱 처리 (일/월/시간대 전이 및 T사 시간세 반영)
+   * 실시간 TimeKeeper 틱 처리 (1분 = 1시간, 나이 성장 마일스톤 및 정밀 시간세 반영)
    */
   static processTimeTick(state: GameState, tick: TimeTickResult): GameState {
     if (state.isGameOver) return state;
@@ -138,30 +147,16 @@ export class CoreEngine {
     let isGameOver = false;
     let gameOverReason = '';
 
-    // 1. 일차 경과 시 처리 (식비 차감, 거주세 차감, T사 시간세)
-    if (tick.dayPassed) {
-      p.housingTaxDaysLeft -= 1;
+    // 1. 매 인게임 1시간 경과 시 처리
+    if (tick.hourPassed) {
+      // 20구 T사(Time Track) 시간 소모
+      if (p.currentDistrictId === 20 && p.timeBalanceHours !== undefined) {
+        p.timeBalanceHours -= 1;
 
-      // 식비 40안 차감
-      if (p.ahn >= 40) {
-        p.ahn -= 40;
-      } else {
-        p.hp = Math.max(0, p.hp - 8);
-        p.sp = Math.max(-45, p.sp - 8);
-      }
-
-      // 20구 T사(Time Track) 시간 소모 및 시간세 감사
-      if (p.currentDistrictId === 20) {
-        p.timeBalanceHours = (p.timeBalanceHours ?? 24) - 1;
-        if (p.timeTaxDueDays !== undefined) {
-          p.timeTaxDueDays -= 1;
-        }
-
-        // 시간 고갈 상태 판정 (흑백화 / 정지)
         if (p.timeBalanceHours <= 0) {
           p.isTimeFrozen = true;
-          p.hp = Math.max(0, p.hp - 4); // 신체 동결 및 괴사
-          p.sp = Math.max(-45, p.sp - 6);
+          p.hp = Math.max(0, p.hp - 2);
+          p.sp = Math.max(-45, p.sp - 3);
 
           if (p.timeBalanceHours <= -24) {
             isGameOver = true;
@@ -172,10 +167,12 @@ export class CoreEngine {
               year: tick.newYear,
               month: tick.newMonth,
               day: tick.newDay,
+              hour: tick.newHour,
+              minute: tick.newMinute,
               timeOfDay: tick.newTimeOfDay,
               districtId: 20,
-              text: '[T사 비상 경보] 개인 시간 잔여량이 0시간에 도달했습니다! 신체가 흑백으로 탈색되며 굳어가고 있습니다. 즉시 시간을 보충하지 않으면 시간 징수관이 출동합니다!',
-              internalMonologue: '몸이... 느려진다... 손이 잿빛으로 변하고 있어...!',
+              text: '[T사 비상 경보] 개인 시간 잔여량이 0시간에 도달했습니다! 신체가 잿빛으로 탈색되며 굳어갑니다. 즉시 시간을 보충하지 않으면 징수관이 출동합니다!',
+              internalMonologue: '몸이 굳어간다... 손가락이 움직이지 않아...!',
               eventTag: '시간 고갈 위기',
             });
           }
@@ -183,28 +180,90 @@ export class CoreEngine {
           p.isTimeFrozen = false;
         }
       }
+    }
+
+    // 2. 일차 경과 시 처리 (식비 차감, 거주세 차감)
+    if (tick.dayPassed) {
+      p.housingTaxDaysLeft -= 1;
+      if (p.timeTaxDueDays !== undefined) {
+        p.timeTaxDueDays -= 1;
+      }
+
+      // 하루 기본 식비 (어린이는 20안, 소년기 35안, 성인 50안)
+      const dailyFoodCost = p.growthStage === 'CHILD' ? 20 : p.growthStage === 'ADOLESCENT' ? 35 : 50;
+      if (p.ahn >= dailyFoodCost) {
+        p.ahn -= dailyFoodCost;
+      } else {
+        p.hp = Math.max(0, p.hp - 6);
+        p.sp = Math.max(-45, p.sp - 6);
+      }
 
       // 체력 0 판정
       if (p.hp <= 0) {
         isGameOver = true;
-        gameOverReason = '극심한 부상과 기아로 인해 뒷골목의 차가운 바닥에서 사망하였습니다.';
+        gameOverReason = '극심한 부상과 기아로 인해 뒷골목의 차가운 바닥에서 숨을 거두었습니다.';
       }
     }
 
-    // 2. 1년 경과 (도시력 나이 증가)
-    if (tick.monthPassed && tick.newYear !== state.year) {
+    // 3. 1년 경과 (나이 증가 및 성장 마일스톤)
+    if (tick.yearPassed || (tick.monthPassed && tick.newYear !== state.year)) {
       p.age += 1;
-      logs.push({
-        id: `log_year_${Date.now()}`,
-        year: tick.newYear,
-        month: tick.newMonth,
-        day: tick.newDay,
-        timeOfDay: tick.newTimeOfDay,
-        districtId: p.currentDistrictId,
-        text: `[도시력 ${tick.newYear}년 새해] 잔혹한 도시의 톱니바퀴 속에서 기적적으로 또 1년을 생존해냈습니다. 당신의 나이는 이제 ${p.age}세입니다.`,
-        internalMonologue: `또 1년을 살아남았다. 언제까지 이 숨이 붙어있을지는 모르겠지만.`,
-        eventTag: '도시 생존 1주년',
-      });
+
+      // 13세: 소년기(ADOLESCENT) 돌파
+      if (p.age === 13 && p.growthStage === 'CHILD') {
+        p.growthStage = 'ADOLESCENT';
+        p.maxHp += 25;
+        p.hp = Math.min(p.maxHp, p.hp + 25);
+        logs.push({
+          id: `log_grow_13_${Date.now()}`,
+          year: tick.newYear,
+          month: tick.newMonth,
+          day: tick.newDay,
+          hour: tick.newHour,
+          minute: tick.newMinute,
+          timeOfDay: tick.newTimeOfDay,
+          districtId: p.currentDistrictId,
+          text: `[★ 성장: 소년기 진입] 13세가 되었습니다! 키가 훌쩍 자라고 골목길의 험난한 생존 기술을 체득했습니다. (최대 체력 +25)`,
+          internalMonologue: `더 이상 무기력하게 당하기만 하던 어린애가 아니다. 내 손으로 먹고살 길을 찾아야 해.`,
+          eventTag: '★ 소년기 성장',
+        });
+      }
+      // 17세: 성인(ADULT) 돌파 및 9급 해결사 면허 취득
+      else if (p.age === 17 && p.growthStage === 'ADOLESCENT') {
+        p.growthStage = 'ADULT';
+        p.maxHp += 25;
+        p.hp = Math.min(p.maxHp, p.hp + 25);
+        if (p.path === 'FIXER') {
+          p.fixerGrade = 9;
+        }
+        logs.push({
+          id: `log_grow_17_${Date.now()}`,
+          year: tick.newYear,
+          month: tick.newMonth,
+          day: tick.newDay,
+          hour: tick.newHour,
+          minute: tick.newMinute,
+          timeOfDay: tick.newTimeOfDay,
+          districtId: p.currentDistrictId,
+          text: `[★ 성장: 성인 진입 & 9급 해결사 공인] 17세 성인이 되었습니다! 하나 협회 말단 창구에서 시험을 치르고 마침내 "9급 해결사" 면허를 정식 발급받았습니다! (최대 체력 +25, 9급 해결사 승격)`,
+          internalMonologue: `마침내 어엿한 해결사다. 이제 도시의 본격적인 무대에 발을 들여놓는다.`,
+          eventTag: '★ 9급 해결사 승격',
+        });
+      } else {
+        logs.push({
+          id: `log_year_${Date.now()}`,
+          year: tick.newYear,
+          month: tick.newMonth,
+          day: tick.newDay,
+          hour: tick.newHour,
+          minute: tick.newMinute,
+          timeOfDay: tick.newTimeOfDay,
+          districtId: p.currentDistrictId,
+          text: `[도시력 ${tick.newYear}년] 잔혹한 도시의 톱니바퀴 속에서 1년을 버텨내어 ${p.age}세가 되었습니다.`,
+          internalMonologue: `또 1년을 살아남았다. 숨이 붙어있다는 것 자체가 기적이다.`,
+          eventTag: '생존 기념',
+        });
+      }
     }
 
     return {
@@ -212,7 +271,10 @@ export class CoreEngine {
       year: tick.newYear,
       month: tick.newMonth,
       day: tick.newDay,
+      hour: tick.newHour,
+      minute: tick.newMinute,
       timeOfDay: tick.newTimeOfDay,
+      dayProgress: tick.dayProgress,
       monthProgress: tick.monthProgress,
       player: p,
       logs: logs.slice(-100),
@@ -230,6 +292,8 @@ export class CoreEngine {
       year: situation.year,
       month: situation.month,
       day: state.day,
+      hour: state.hour,
+      minute: state.minute,
       timeOfDay: state.timeOfDay,
       districtId: state.player.currentDistrictId,
       text: `[${situation.year}년 ${situation.month}월: ${situation.title}]\n${situation.loreDescription}`,
@@ -516,6 +580,8 @@ export class CoreEngine {
       year: newYear,
       month: newMonth,
       day: newDay,
+      hour: state.hour,
+      minute: state.minute,
       timeOfDay: newTime,
       districtId: p.currentDistrictId,
       text: narrative,
@@ -547,6 +613,8 @@ export class CoreEngine {
       year: state.year,
       month: state.month,
       day: state.day,
+      hour: state.hour,
+      minute: state.minute,
       timeOfDay: state.timeOfDay,
       districtId: state.player.currentDistrictId,
       text: `[돌발 인카운터: ${encounter.title}]\n${encounter.description}`,

@@ -108,6 +108,7 @@ export interface PlayerCharacter {
 
   // 사회적 신분
   path: FactionPath;
+  growthStage: 'CHILD' | 'ADOLESCENT' | 'ADULT'; // 유소년(8~12세), 소년기(13~16세), 성인(17세 이상)
   fixerGrade?: FixerGrade;
   colorTitle?: string; // 예: "검은 침묵", "비취 안개"
   association?: string; // 12협회 중 소속
@@ -120,17 +121,28 @@ export interface PlayerCharacter {
   taboo: TabooViolation;
 }
 
-export type TimeOfDay = 'MORNING' | 'AFTERNOON' | 'EVENING' | 'NIGHT_SWEEPER';
+export type TimeOfDay =
+  | 'DAWN'          // 04:35 ~ 07:59 (새벽/해돋이)
+  | 'MORNING'       // 08:00 ~ 11:59 (오전)
+  | 'AFTERNOON'     // 12:00 ~ 17:59 (오후)
+  | 'EVENING'       // 18:00 ~ 23:59 (저녁)
+  | 'MIDNIGHT'      // 00:00 ~ 03:12 (심야)
+  | 'NIGHT_SWEEPER';// 03:13 ~ 04:34 (뒷골목의 밤 청소부)
+
 export type TimeSpeed = 'PAUSED' | '1X' | '2X' | '4X';
 
 export type EncounterCategory =
-  | 'RELATIONSHIP_DISCOVERY' // 인연/히로인 조우
+  | 'RELATIONSHIP_DISCOVERY' // 인연/동료 조우
   | 'TCORP_AUDIT'           // T사 시간세 감사/시간 거래
-  | 'NIGHT_SWEEPER_TERROR'  // 뒷골목의 밤 청소부
-  | 'DISTRICT_SINGULARITY'  // 날개 특이점 및 암시장
-  | 'FIXER_CONTRACT'        // 해결사 의뢰
-  | 'STREET_COMBAT'         // 골목 칼부림
-  | 'SHIN_CRISIS';          // 내면의 공포/카르멘의 속삭임
+  | 'NIGHT_SWEEPER_TERROR'  // 뒷골목의 밤 청소부 (03:13 ~ 04:34)
+  | 'DISTRICT_SINGULARITY'  // 26개 구역 날개 특이점 (F사 요정, G사 벌레, K사 앰플, N사 못과망치, W사 워프 등)
+  | 'FIXER_ASSOCIATION'     // 12협회 사건/의뢰 (츠바이, 리우, 시, 제뱌찌, 디에치, 트레스 등)
+  | 'FINGER_SYNDICATE'      // 다섯 손가락 (엄지, 검지, 중지, 약지, 소지)
+  | 'WORKSHOP_TATTOO'       // 공방 무기 & 강화 문신 & 의체 개조
+  | 'DISTORTION_EGO'        // 뒤틀림, 카르멘의 속삭임, 개화 에고, 신(心)과 망(望)
+  | 'HEAD_TABOO'            // 머리의 절대 금기 감시
+  | 'STREET_SURVIVAL'       // 골목 생존, 배급, 구걸, 도둑질 (유소년 특화)
+  | 'STREET_COMBAT';        // 골목 칼부림 / 합(Clash)
 
 export interface ActiveEncounter {
   id: string;
@@ -147,7 +159,22 @@ export interface ActionChoice {
   id: string;
   text: string;
   description?: string;
-  actionType: 'REST' | 'WORK' | 'EXPLORE' | 'COMBAT' | 'TRAIN_SHIN' | 'ROMANCE' | 'PAY_TAX' | 'PAY_TIME_TAX' | 'BORROW_TIME' | 'BUY_TIME' | 'CUSTOM' | 'EVENT_CHOICE' | 'RECRUIT_RELATIONSHIP';
+  actionType:
+    | 'REST'
+    | 'WORK'
+    | 'EXPLORE'
+    | 'COMBAT'
+    | 'TRAIN_SHIN'
+    | 'ROMANCE'
+    | 'PAY_TAX'
+    | 'PAY_TIME_TAX'
+    | 'BORROW_TIME'
+    | 'BUY_TIME'
+    | 'CUSTOM'
+    | 'EVENT_CHOICE'
+    | 'RECRUIT_RELATIONSHIP'
+    | 'SCAVENGE'
+    | 'STUDY';
   dangerLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
   costAhn?: number;
   costSp?: number;
@@ -174,10 +201,13 @@ export interface GameState {
   year: number; // 도시력 (예: 984)
   month: number; // 1 ~ 12월
   day: number; // 1 ~ 30일
+  hour: number; // 0 ~ 23시 (1분 = 1시간 정밀 시계)
+  minute: number; // 0 ~ 59분
   timeOfDay: TimeOfDay;
   timeSpeed: TimeSpeed;
   previousTimeSpeed?: TimeSpeed; // 스페이스바 재개용 이전 속도
-  monthProgress: number; // 0.0 ~ 1.0 (60초 중 경과율)
+  dayProgress: number; // 0.0 ~ 1.0 (하루 24시간 중 진행률)
+  monthProgress: number; // 0.0 ~ 1.0 (월 진행률)
   isAutoPaused: boolean;
   player: PlayerCharacter;
   logs: NarrativeLog[];
@@ -193,6 +223,8 @@ export interface NarrativeLog {
   year?: number;
   month?: number;
   day: number;
+  hour?: number;
+  minute?: number;
   timeOfDay: TimeOfDay;
   districtId: number;
   text: string;

@@ -44,7 +44,8 @@ export default function App() {
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const timeKeeperRef = useRef<TimeKeeper>(new TimeKeeper());
-  const lastEncounterDayRef = useRef<number>(1);
+  const totalHoursPassedRef = useRef<number>(0);
+  const lastEncounterHourRef = useRef<number>(0);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -91,23 +92,24 @@ export default function App() {
       const isTCorp = distId === 20;
       newState.player.birthDistrictId = distId;
       newState.player.currentDistrictId = distId;
-      newState.player.timeBalanceHours = isTCorp ? 48 : undefined;
-      newState.player.timeTaxDueDays = isTCorp ? 14 : undefined;
+      newState.player.timeBalanceHours = isTCorp ? 24 : undefined;
+      newState.player.timeTaxDueDays = isTCorp ? 7 : undefined;
       newState.player.isTimeFrozen = false;
 
       const dist = DISTRICTS_DATA[distId];
-      newState.logs[0].text = `당신은 ${dist.wingName} 관할 ${dist.id}구 뒷골목에서 눈을 떴습니다. ${dist.backstreetCulture}${
-        isTCorp ? '\n[T사 고유 규칙] 잔여 개인 시간: 48시간. 시간세 납부 기한: 14일.' : ''
+      newState.logs[0].text = `당신은 ${dist.wingName} 관할 ${dist.id}구 뒷골목에서 태어난 ${newState.player.age}살 아이입니다. ${dist.backstreetCulture}${
+        isTCorp ? '\n[T사 고유 규칙] 잔여 개인 시간: 24시간. 시간세 납부 기한: 7일.' : ''
       }`;
     }
 
-    lastEncounterDayRef.current = 1;
+    totalHoursPassedRef.current = 0;
+    lastEncounterHourRef.current = 0;
     timeKeeperRef.current.reset(0);
     setGameState(newState);
     setIsCreating(false);
   };
 
-  // 실시간 틱 루프 (1분 = 1달, 2초 = 1일)
+  // 실시간 틱 루프 (1분 = 1시간, 1초 = 1분, 하루 24시간 = 24분 사이클)
   useEffect(() => {
     if (!gameState || isCreating || gameState.isGameOver) return;
     if (gameState.timeSpeed === 'PAUSED' || gameState.pendingSituation || gameState.activeEncounter) return;
@@ -124,12 +126,13 @@ export default function App() {
         gameState.year,
         gameState.month,
         gameState.day,
+        gameState.hour,
+        gameState.minute,
         gameState.timeOfDay
       );
 
-      // 80% 진행 시 다음 달 서사/선택지 사전 요청 (Prefetch)
-      if (tickResult.shouldPrefetchNextMonth) {
-        DynamicChoiceGenerator.prefetchNextMonth(gameState, geminiApiKey);
+      if (tickResult.hourPassed) {
+        totalHoursPassedRef.current += 1;
       }
 
       // 월 전환 시 자동 일시정지 및 월간 주요 사건 모달 팝업
@@ -149,20 +152,22 @@ export default function App() {
         return;
       }
 
-      // 하루 경과 또는 시간대 전환 시 상태 갱신 + 일상 서사 문장 피드 스트리밍
-      if (tickResult.dayPassed || tickResult.timeOfDayChanged) {
+      // 매 분 경과 시 상태 갱신 (1초마다 1분씩 정밀하게 흐름)
+      if (tickResult.minutePassed) {
         setGameState((prev) => {
           if (!prev) return null;
           let updated = CoreEngine.processTimeTick(prev, tickResult);
 
-          // 인카운터가 없을 때 시간대별 도시 일상 묘사 문장 추가
-          if (!updated.activeEncounter && !updated.pendingSituation) {
+          // 1시간 경과 또는 시간대 전환 시 도시 일상 서사 피드 출력
+          if ((tickResult.hourPassed || tickResult.timeOfDayChanged) && !updated.activeEncounter && !updated.pendingSituation) {
             const ambient = EncounterDirector.generateAmbientLog(updated);
             const ambientLog: NarrativeLog = {
               id: `ambient_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
               year: updated.year,
               month: updated.month,
               day: updated.day,
+              hour: updated.hour,
+              minute: updated.minute,
               timeOfDay: updated.timeOfDay,
               districtId: updated.player.currentDistrictId,
               text: ambient.text,
@@ -176,16 +181,13 @@ export default function App() {
           return updated;
         });
 
-        // 돌발 인카운터 발생 조건 판정
-        if (EncounterDirector.shouldTriggerEncounter(gameState, lastEncounterDayRef.current)) {
-          lastEncounterDayRef.current = tickResult.newDay;
+        // 돌발 인카운터 발생 조건 판정 (AI 동적 생성 or 4대 설정 보고서 풀)
+        if (EncounterDirector.shouldTriggerEncounter(gameState, totalHoursPassedRef.current, lastEncounterHourRef.current)) {
+          lastEncounterHourRef.current = totalHoursPassedRef.current;
           const encounter = await EncounterDirector.generateRandomEncounter(gameState, geminiApiKey);
           setGameState((prev) => (prev ? CoreEngine.triggerEncounter(prev, encounter) : null));
           return;
         }
-      } else {
-        // 프로그레스 바 갱신
-        setGameState((prev) => (prev ? { ...prev, monthProgress: tickResult.monthProgress } : null));
       }
     }, 100);
 
@@ -194,6 +196,8 @@ export default function App() {
     gameState?.timeSpeed,
     gameState?.month,
     gameState?.day,
+    gameState?.hour,
+    gameState?.minute,
     gameState?.timeOfDay,
     gameState?.isGameOver,
     gameState?.pendingSituation,
@@ -308,7 +312,7 @@ export default function App() {
               도시의 생존자 (Stranger in the City)
             </h2>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.6rem' }}>
-              현실 1분 = 도시의 1달. 시간은 끊임없이 흐르며, 거리에서 마주치는 수많은 인카운터 속에서 당신의 인연과 서사를 개척하십시오.
+              현실 1분 = 도시의 1시간 (하루 24분 사이클). 당신은 8~10세의 어린 나이로 거친 도시의 밑바닥에서 눈을 뜹니다. 차가운 골목의 생존과 날개·손가락·협회의 거대한 소용돌이 속에서 살아남아 성장하십시오.
             </p>
           </div>
 
@@ -470,32 +474,38 @@ export default function App() {
               <span className="brand-badge" style={{ borderColor: 'var(--pm-cyan)', color: 'var(--pm-cyan)', background: 'rgba(0,180,216,0.1)' }}>
                 {gameState.month}월 {gameState.day}일
               </span>
+              <span className="brand-badge" style={{ borderColor: 'var(--pm-gold)', color: 'var(--pm-gold)', fontWeight: 'bold' }}>
+                <Clock size={11} style={{ display: 'inline', marginRight: '3px' }} />
+                {String(gameState.hour).padStart(2, '0')}:{String(gameState.minute).padStart(2, '0')}
+              </span>
               <span
                 className="brand-badge"
                 style={{
-                  borderColor: gameState.timeOfDay === 'NIGHT_SWEEPER' ? 'var(--pm-crimson)' : 'var(--pm-gold)',
-                  color: gameState.timeOfDay === 'NIGHT_SWEEPER' ? '#ff4d6d' : 'var(--pm-gold)',
-                  background: gameState.timeOfDay === 'NIGHT_SWEEPER' ? 'rgba(214,40,40,0.25)' : 'rgba(255,209,102,0.1)',
+                  borderColor: gameState.timeOfDay === 'NIGHT_SWEEPER' ? 'var(--pm-crimson)' : 'var(--border-color)',
+                  color: gameState.timeOfDay === 'NIGHT_SWEEPER' ? '#ff4d6d' : 'var(--text-muted)',
+                  background: gameState.timeOfDay === 'NIGHT_SWEEPER' ? 'rgba(214,40,40,0.25)' : 'rgba(255,255,255,0.05)',
                   fontWeight: gameState.timeOfDay === 'NIGHT_SWEEPER' ? 'bold' : 'normal',
                 }}
               >
-                {gameState.timeOfDay === 'MORNING' && '오전 (06:00)'}
-                {gameState.timeOfDay === 'AFTERNOON' && '오후 (12:00)'}
-                {gameState.timeOfDay === 'EVENING' && '저녁 (18:00)'}
+                {gameState.timeOfDay === 'DAWN' && '새벽 (04:35~)'}
+                {gameState.timeOfDay === 'MORNING' && '오전 (08:00~)'}
+                {gameState.timeOfDay === 'AFTERNOON' && '오후 (12:00~)'}
+                {gameState.timeOfDay === 'EVENING' && '저녁 (18:00~)'}
+                {gameState.timeOfDay === 'MIDNIGHT' && '심야 (00:00~)'}
                 {gameState.timeOfDay === 'NIGHT_SWEEPER' && '⚠ 뒷골목의 밤 (03:13 ~ 04:34)'}
               </span>
             </div>
 
-            {/* 1분 = 1달 프로그레스 바 */}
-            <div className="month-progress-wrapper">
-              <div className="month-progress-bar-bg" title="1분 = 1달 경과 게이지">
+            {/* 1일 24시간 = 24분 사이클 진행 게이지 */}
+            <div className="month-progress-wrapper" style={{ width: '240px' }}>
+              <div className="month-progress-bar-bg" title="1분 = 1시간 (하루 24분 사이클)">
                 <div
                   className="month-progress-bar-fill"
-                  style={{ width: `${Math.round(gameState.monthProgress * 100)}%` }}
+                  style={{ width: `${Math.round(gameState.dayProgress * 100)}%` }}
                 />
               </div>
               <span style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                {Math.round(gameState.monthProgress * 100)}% (1분=1달)
+                {Math.round(gameState.dayProgress * 100)}% (1분=1시간)
               </span>
             </div>
           </div>
@@ -576,7 +586,7 @@ export default function App() {
             <div>
               <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)' }}>{p.name}</h2>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {p.gender === 'male' ? '남성' : p.gender === 'female' ? '여성' : '의체 중성'} | {p.age}세 | {p.path === 'FIXER' ? `${p.fixerGrade}급 해결사` : '둥지의 깃털'}
+                {p.gender === 'male' ? '남성' : p.gender === 'female' ? '여성' : '의체 중성'} | {p.age}세 ({p.growthStage === 'CHILD' ? '유소년' : p.growthStage === 'ADOLESCENT' ? '소년기' : '성인'}) | {p.path === 'FIXER' ? (p.fixerGrade ? `${p.fixerGrade}급 해결사` : '견습 생존자') : '둥지의 깃털'}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--pm-gold)', fontWeight: 'bold', fontSize: '0.9rem' }}>
@@ -801,7 +811,7 @@ export default function App() {
               >
                 <div className="log-header">
                   <span>
-                    {log.year ? `${log.year}년 ` : ''}{log.month ? `${log.month}월 ` : ''}{log.day}일 - {log.timeOfDay}
+                    {log.year ? `${log.year}년 ` : ''}{log.month ? `${log.month}월 ` : ''}{log.day}일 {log.hour !== undefined ? `${String(log.hour).padStart(2, '0')}:${String(log.minute ?? 0).padStart(2, '0')} ` : ''}- {log.timeOfDay}
                   </span>
                   {log.eventTag && <span style={{ color: 'var(--pm-gold)' }}>[{log.eventTag}]</span>}
                 </div>
@@ -827,10 +837,14 @@ export default function App() {
                     {gameState.activeEncounter.category === 'RELATIONSHIP_DISCOVERY' && '♥ 인연의 조우'}
                     {gameState.activeEncounter.category === 'TCORP_AUDIT' && '⏳ T사 시간세 감사'}
                     {gameState.activeEncounter.category === 'NIGHT_SWEEPER_TERROR' && '⚠ 청소부의 밤 습격'}
-                    {gameState.activeEncounter.category === 'FIXER_CONTRACT' && '📜 긴급 해결사 의뢰'}
-                    {gameState.activeEncounter.category === 'DISTRICT_SINGULARITY' && '🧪 특이점 암시장'}
+                    {gameState.activeEncounter.category === 'DISTRICT_SINGULARITY' && '🧪 구역 특이점 사건'}
+                    {gameState.activeEncounter.category === 'FIXER_ASSOCIATION' && '📜 12협회 의뢰'}
+                    {gameState.activeEncounter.category === 'FINGER_SYNDICATE' && '🖐 다섯 손가락 율법'}
+                    {gameState.activeEncounter.category === 'WORKSHOP_TATTOO' && '🔧 공방 & 강화 문신'}
+                    {gameState.activeEncounter.category === 'DISTORTION_EGO' && '★ 뒤틀림 & E.G.O'}
+                    {gameState.activeEncounter.category === 'HEAD_TABOO' && '👁 머리의 절대 금기'}
+                    {gameState.activeEncounter.category === 'STREET_SURVIVAL' && '🍞 뒷골목 생존기'}
                     {gameState.activeEncounter.category === 'STREET_COMBAT' && '⚔ 골목 칼부림'}
-                    {gameState.activeEncounter.category === 'SHIN_CRISIS' && '★ 심연의 속삭임'}
                   </span>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                     [시간 정지됨 - 결단 대기 중]
