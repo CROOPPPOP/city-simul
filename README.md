@@ -1,32 +1,65 @@
-# React + TypeScript + Vite
+# 프로젝트 문: 뒷골목의 이방인 (City Simulator)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+> **"도시는 매 순간이 생존을 건 투쟁이며, 인간의 절망과 선택에 따른 잔혹한 서사가 교차하는 거대한 인공 구조물이다."**
 
-Currently, two official plugins are available:
+프로젝트 문(Project Moon - Lobotomy Corporation, Library of Ruina, Limbus Company) 세계관을 기반으로 한 **인생 시뮬레이션 웹 팬게임**입니다.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+수치와 절대 법칙은 **결정론적 룰 엔진(Rule-based Core Engine)**이 엄격하게 집행하며, 디스토피아적 상황 묘사와 인물 간의 서사는 **AI(LLM) 서사 디렉터**가 실시간으로 직조하는 하이브리드 아키텍처로 구동됩니다.
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🎮 주요 시스템 및 특징
 
-## Expanding the Oxlint configuration
+### 1. 26개 구 무작위 출생 시스템 (Random Genesis)
+* **26개 날개(Wings)의 특이점 데이터베이스 반영**: 
+  * 11구 K사 나노 회복 앰플, 14구 N사 순혈주의, 20구 T사 시간세(Time Track), 23구 W사 맛의 골목(식인 문화) 등.
+* **둥지(Nest) vs 뒷골목(Backstreets) 확률 판정**:
+  * **15% 확률 (둥지의 깃털)**: 넉넉한 초기 자금과 정규 보급 장비로 시작하나, 날개의 가혹한 특이점 생체 실험 공포가 도사립니다.
+  * **85% 확률 (뒷골목의 부랑자)**: 고작 3일분의 거주세와 녹슨 무기로 시작하여 오늘 밤 살아남는 것이 급선무입니다.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+### 2. 성별 선택 및 연애 / 인연(히로인·히어로) 시스템
+* **성별 선택**: 남성 / 여성 / 의체 중성(Cyborg) 선택 가능.
+* **프로젝트 문식 비극적 유대 메커니즘**:
+  * 호감도(Affection)와 의존도(Dependence) 2축 시스템.
+  * 인연 캐릭터들은 각각 거주세 체납, N사 이단심문관의 수색, 검지의 기괴한 지령 등 처절한 위기(`currentCrisis`)에 처해 있습니다.
+  * 교류와 위기 극복을 통해 **지인 → 맹세의 동료 → 연인(Lover)**으로 발전합니다.
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+### 3. 신(心)과 망(望)의 후천적 단계별 개화
+* **초기 상태**: 전혀 보유하지 않은 미각성 상태에서 시작.
+* **신(心) 각성**: SP가 위기 수준으로 폭락할 때 절망에 굴복하지 않고 내면의 죄와 공포를 응시하는 결단을 내리면 개화. (오라 활성화 시 전투 다이스 대폭 상승, 매 턴 SP 소모).
+* **망(望) 축적 (1망 ~ 5망)**: 연인을 지키겠다는 갈망, 복수심, 결단의 순간을 거치며 황금빛 고리가 응축되어 단계별로 해금.
+
+### 4. 머리의 금기와 뒷골목의 밤 (03:13 ~ 04:34)
+* **거주세 미납 시**: 매일 심야, 합법 거주구역 밖으로 쫓겨나 머리가 보낸 액체 인간 **'청소부(Sweeper)'**의 표적이 됩니다.
+* **절대적 금기**: AI 자의식 부여, 복제인간 7일 초과, 무단 침입, 탈세 등 위반 시 **불순물(Impurity)**로 지정되어 조율자와 발톱이 즉결 처형에 나섭니다.
+
+---
+
+## 🛠 기술 스택 & 아키텍처
+
+* **Core Framework**: React 19 + TypeScript + Vite
+* **Styling**: Vanilla CSS (인더스트리얼 다크 모드, 네온 액센트, Glassmorphism, 림버스/라오루 테마)
+* **Rule Engine**: 결정론적 상태 머신 (주사위 합 판정, 수명/시간 루프, 신체 손상/사지 절단, 금기 체크)
+* **AI Narrative Director**:
+  * Google Gemini API 실시간 연동 (API Key 입력 모달 제공)
+  * API Key 없이도 완전하게 플레이 가능한 내장 로어 시나리오 덱(Built-in Fallback Engine) 탑재
+
+---
+
+## 🚀 로컬 실행 방법
+
+```bash
+# 1. 의존성 설치
+npm install
+
+# 2. 로컬 개발 서버 실행
+npm run dev
+
+# 3. 브라우저에서 접속
+# http://localhost:5173
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+---
+
+## 📜 라이선스 및 면책
+본 프로젝트는 **Project Moon(프로젝트 문)**의 세계관을 바탕으로 제작된 비상업적 팬게임 프로젝트입니다. 모든 세계관 및 명칭의 저작권은 Project Moon에 귀속됩니다.
