@@ -123,11 +123,31 @@ export interface PlayerCharacter {
 export type TimeOfDay = 'MORNING' | 'AFTERNOON' | 'EVENING' | 'NIGHT_SWEEPER';
 export type TimeSpeed = 'PAUSED' | '1X' | '2X' | '4X';
 
+export type EncounterCategory =
+  | 'RELATIONSHIP_DISCOVERY' // 인연/히로인 조우
+  | 'TCORP_AUDIT'           // T사 시간세 감사/시간 거래
+  | 'NIGHT_SWEEPER_TERROR'  // 뒷골목의 밤 청소부
+  | 'DISTRICT_SINGULARITY'  // 날개 특이점 및 암시장
+  | 'FIXER_CONTRACT'        // 해결사 의뢰
+  | 'STREET_COMBAT'         // 골목 칼부림
+  | 'SHIN_CRISIS';          // 내면의 공포/카르멘의 속삭임
+
+export interface ActiveEncounter {
+  id: string;
+  category: EncounterCategory;
+  title: string;
+  description: string;
+  atmosphereQuote?: string;
+  carmenWhisper?: string;
+  choices: ActionChoice[];
+  discoveredNpc?: RelationshipCharacter; // 조우한 인연 캐릭터 (선택 시 영입 가능)
+}
+
 export interface ActionChoice {
   id: string;
   text: string;
   description?: string;
-  actionType: 'REST' | 'WORK' | 'EXPLORE' | 'COMBAT' | 'TRAIN_SHIN' | 'ROMANCE' | 'PAY_TAX' | 'PAY_TIME_TAX' | 'BORROW_TIME' | 'BUY_TIME' | 'CUSTOM' | 'EVENT_CHOICE';
+  actionType: 'REST' | 'WORK' | 'EXPLORE' | 'COMBAT' | 'TRAIN_SHIN' | 'ROMANCE' | 'PAY_TAX' | 'PAY_TIME_TAX' | 'BORROW_TIME' | 'BUY_TIME' | 'CUSTOM' | 'EVENT_CHOICE' | 'RECRUIT_RELATIONSHIP';
   dangerLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
   costAhn?: number;
   costSp?: number;
@@ -135,6 +155,7 @@ export interface ActionChoice {
   costTimeHours?: number; // T사 시간 소모
   rewardTimeHours?: number; // T사 시간 획득
   rewardAhn?: number;
+  recruitCharacter?: RelationshipCharacter; // 이 선택지를 고르면 인연으로 등록
   customPrompt?: string;
 }
 
@@ -155,11 +176,13 @@ export interface GameState {
   day: number; // 1 ~ 30일
   timeOfDay: TimeOfDay;
   timeSpeed: TimeSpeed;
+  previousTimeSpeed?: TimeSpeed; // 스페이스바 재개용 이전 속도
   monthProgress: number; // 0.0 ~ 1.0 (60초 중 경과율)
   isAutoPaused: boolean;
   player: PlayerCharacter;
   logs: NarrativeLog[];
   currentChoices: ActionChoice[];
+  activeEncounter: ActiveEncounter | null; // 현재 발생한 돌발 인카운터
   pendingSituation: MonthlySituation | null;
   isGameOver: boolean;
   gameOverReason?: string;

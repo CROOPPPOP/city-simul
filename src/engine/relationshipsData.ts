@@ -67,7 +67,6 @@ const NPC_TEMPLATES: NpcTemplate[] = [
 ];
 
 export function generateInitialRelationship(playerGender: Gender, districtId: number): RelationshipCharacter {
-  // 플레이어 성별에 따라 로맨스 가능한 대상 우선 고려 (이성 또는 다양한 성향 대응)
   const targetGender: Gender = playerGender === 'male' ? 'female' : 'male';
   let filtered = NPC_TEMPLATES.filter((t) => t.gender === targetGender);
   if (filtered.length === 0) filtered = NPC_TEMPLATES;
@@ -89,3 +88,31 @@ export function generateInitialRelationship(playerGender: Gender, districtId: nu
     currentCrisis: crisis,
   };
 }
+
+/**
+ * 아직 인연으로 맺어지지 않은 새로운 NPC를 동적으로 조우하도록 생성
+ */
+export function generateDiscoverableNpc(existingRelationships: RelationshipCharacter[], districtId: number): RelationshipCharacter | null {
+  const existingNames = new Set(existingRelationships.map((r) => r.name));
+  const availableTemplates = NPC_TEMPLATES.filter((t) => !existingNames.has(t.name));
+
+  if (availableTemplates.length === 0) return null;
+
+  const chosen = availableTemplates[Math.floor(Math.random() * availableTemplates.length)];
+  const crisis = chosen.crisisList[Math.floor(Math.random() * chosen.crisisList.length)];
+
+  return {
+    id: `npc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    name: chosen.name,
+    gender: chosen.gender,
+    title: chosen.title,
+    districtId: districtId,
+    affection: 20, // 조우 초기 호감도
+    dependence: 25,
+    type: 'stranger',
+    status: 'alive',
+    backstory: chosen.backstory,
+    currentCrisis: crisis,
+  };
+}
+

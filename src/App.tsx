@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { GameState, Gender, ActionChoice, TimeSpeed } from './types/game';
+import type { GameState, Gender, ActionChoice, TimeSpeed, NarrativeLog } from './types/game';
 import { CoreEngine } from './engine/coreEngine';
 import { DISTRICTS_DATA } from './engine/districtsData';
 import { AINarrativeDirector } from './engine/aiNarrative';
 import { TimeKeeper } from './engine/timeKeeper';
 import { DynamicChoiceGenerator } from './engine/dynamicChoiceGenerator';
+import { EncounterDirector } from './engine/encounterDirector';
 import {
   Skull,
   Shield,
@@ -41,14 +42,46 @@ export default function App() {
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const timeKeeperRef = useRef<TimeKeeper>(new TimeKeeper());
+  const lastEncounterDayRef = useRef<number>(1);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [gameState?.logs]);
 
+  // 전역 스페이스바(Space) 일시정지 / 재개 단축키
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 텍스트 인풋창 포커스 중일 때는 스페이스바 타이핑 허용
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setGameState((prev) => {
+          if (!prev || prev.isGameOver) return prev;
+          if (prev.timeSpeed === 'PAUSED') {
+            const resumeSpeed = prev.previousTimeSpeed || '1X';
+            return { ...prev, timeSpeed: resumeSpeed, isAutoPaused: false };
+          } else {
+            return {
+              ...prev,
+              previousTimeSpeed: prev.timeSpeed,
+              timeSpeed: 'PAUSED',
+              isAutoPaused: false,
+            };
+          }
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // 캐릭터 생성
   const handleStartGame = () => {
-    let newState = CoreEngine.createCharacter(charName, charGender);
+    const newState = CoreEngine.createCharacter(charName, charGender);
 
     // 유저가 특정 출생 구역을 지정했을 경우 (예: 20구 T사 테스트)
     if (selectedBirthDistrict !== 'RANDOM') {
@@ -64,9 +97,9 @@ export default function App() {
       newState.logs[0].text = `당신은 ${dist.wingName} 관할 ${dist.id}구 뒷골목에서 눈을 떴습니다. ${dist.backstreetCulture}${
         isTCorp ? '\n[T사 고유 규칙] 잔여 개인 시간: 48시간. 시간세 납부 기한: 14일.' : ''
       }`;
-      newState.currentChoices = CoreEngine.generateChoices(newState.player, 'MORNING', 1);
     }
 
+    lastEncounterDayRef.current = 1;
     timeKeeperRef.current.reset(0);
     setGameState(newState);
     setIsCreating(false);
@@ -75,7 +108,7 @@ export default function App() {
   // 실시간 틱 루프 (1분 = 1달, 2초 = 1일)
   useEffect(() => {
     if (!gameState || isCreating || gameState.isGameOver) return;
-    if (gameState.timeSpeed === 'PAUSED' || gameState.pendingSituation) return;
+    if (gameState.timeSpeed === 'PAUSED' || gameState.pendingSituation || gameState.activeEncounter) return;
 
     let lastTime = performance.now();
     const interval = setInterval(async () => {
@@ -114,9 +147,40 @@ export default function App() {
         return;
       }
 
-      // 하루 경과 또는 시간대 전환 시 상태 갱신
+      // 하루 경과 또는 시간대 전환 시 상태 갱신 + 일상 서사 문장 피드 스트리밍
       if (tickResult.dayPassed || tickResult.timeOfDayChanged) {
-        setGameState((prev) => (prev ? CoreEngine.processTimeTick(prev, tickResult) : null));
+        setGameState((prev) => {
+          if (!prev) return null;
+          let updated = CoreEngine.processTimeTick(prev, tickResult);
+
+          // 인카운터가 없을 때 시간대별 도시 일상 묘사 문장 추가
+          if (!updated.activeEncounter && !updated.pendingSituation) {
+            const ambient = EncounterDirector.generateAmbientLog(updated);
+            const ambientLog: NarrativeLog = {
+              id: `ambient_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              year: updated.year,
+              month: updated.month,
+              day: updated.day,
+              timeOfDay: updated.timeOfDay,
+              districtId: updated.player.currentDistrictId,
+              text: ambient.text,
+              internalMonologue: ambient.monologue,
+            };
+            updated = {
+              ...updated,
+              logs: [ambientLog, ...updated.logs].slice(0, 50),
+            };
+          }
+          return updated;
+        });
+
+        // 돌발 인카운터 발생 조건 판정
+        if (EncounterDirector.shouldTriggerEncounter(gameState, lastEncounterDayRef.current)) {
+          lastEncounterDayRef.current = tickResult.newDay;
+          const encounter = await EncounterDirector.generateRandomEncounter(gameState, geminiApiKey);
+          setGameState((prev) => (prev ? CoreEngine.triggerEncounter(prev, encounter) : null));
+          return;
+        }
       } else {
         // 프로그레스 바 갱신
         setGameState((prev) => (prev ? { ...prev, monthProgress: tickResult.monthProgress } : null));
@@ -131,6 +195,7 @@ export default function App() {
     gameState?.timeOfDay,
     gameState?.isGameOver,
     gameState?.pendingSituation,
+    gameState?.activeEncounter,
     isCreating,
     geminiApiKey,
   ]);
@@ -140,9 +205,14 @@ export default function App() {
     if (!gameState) return;
     setGameState({
       ...gameState,
+      previousTimeSpeed: gameState.timeSpeed !== 'PAUSED' ? gameState.timeSpeed : prevSpeedFallback(gameState.previousTimeSpeed),
       timeSpeed: newSpeed,
       isAutoPaused: newSpeed === 'PAUSED',
     });
+  };
+
+  const prevSpeedFallback = (s?: TimeSpeed): TimeSpeed => {
+    return s && s !== 'PAUSED' ? s : '1X';
   };
 
   // 행동 실행 (엔진 룰 판정 + AI 서사 가공)
@@ -228,7 +298,7 @@ export default function App() {
               도시의 생존자 (Stranger in the City)
             </h2>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.6rem' }}>
-              현실 1분은 도시의 1달입니다. 톱니바퀴는 멈추지 않고 돌아가며, 당신의 시간과 서사는 AI와 룰 엔진이 직조합니다.
+              현실 1분 = 도시의 1달. 시간은 끊임없이 흐르며, 거리에서 마주치는 수많은 인카운터 속에서 당신의 인연과 서사를 개척하십시오.
             </p>
           </div>
 
@@ -277,7 +347,7 @@ export default function App() {
 
           <div style={{ marginBottom: '1.2rem' }}>
             <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>
-              출생 구역 선택 (테스트 및 체험용)
+              출생 구역 선택 (체험 및 테스트)
             </label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
               <button
@@ -313,8 +383,8 @@ export default function App() {
           </div>
 
           <div style={{ background: 'rgba(214, 40, 40, 0.08)', border: '1px solid #4a151b', padding: '0.8rem', borderRadius: '6px', fontSize: '0.78rem', color: '#ffb3ba', margin: '1.2rem 0' }}>
-            * <strong>시간의 법칙:</strong> 현실 1분 = 게임 1달(30일). 매달 월초에 자동 일시정지와 함께 주요 사건 및 선택지가 제공됩니다.<br />
-            * <strong>T사(Time Track) 주의:</strong> 시간세를 체납하거나 시간이 바닥나면 신체가 흑백으로 굳어가며 정지됩니다.
+            * <strong>인연 시스템:</strong> 시작 시 동료는 없으며, 거리의 돌발 인카운터를 통해 인연을 구출하고 영입합니다.<br />
+            * <strong>시간 및 단축키:</strong> 현실 1분 = 1달. <strong>[Space]</strong> 키로 언제든 시간을 일시정지하거나 재개할 수 있습니다.
           </div>
 
           <button
@@ -339,7 +409,7 @@ export default function App() {
       className={p.isTimeFrozen ? 'frozen-monochrome-filter' : ''}
       style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}
     >
-      {/* Game Header with Time Controls & Calendar Bar */}
+      {/* Game Header with Time Controls & Spacebar Hint */}
       <header className="game-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
           <span className="brand-title">THE CITY</span>
@@ -393,15 +463,16 @@ export default function App() {
             </div>
           )}
 
-          {/* 재생/일시정지/배속 컨트롤 */}
+          {/* 재생/일시정지/배속 컨트롤 + 스페이스바 힌트 */}
           <div className="time-control-group">
             <button
               type="button"
               className={`speed-btn ${gameState.timeSpeed === 'PAUSED' ? 'paused active' : ''}`}
               onClick={() => handleSetSpeed('PAUSED')}
-              title="시간 정지"
+              title="시간 정지 (Space)"
             >
               <Pause size={12} style={{ display: 'inline', marginRight: '2px' }} /> 정지
+              <kbd className="space-hotkey-badge">Space</kbd>
             </button>
             <button
               type="button"
@@ -660,14 +731,19 @@ export default function App() {
           </div>
         </aside>
 
-        {/* Center Column: Narrative Feed & Action Choices */}
+        {/* Center Column: Narrative Feed & Dynamic Encounter Choices */}
         <main className="glass-panel center-log-column">
           <div className="logs-container">
             {gameState.logs.map((log) => (
               <div
                 key={log.id}
                 className={`log-item ${
-                  log.eventTag?.includes('위기') || log.eventTag?.includes('절단') || log.eventTag?.includes('청소부') || log.eventTag?.includes('시간세')
+                  log.eventTag?.includes('위기') ||
+                  log.eventTag?.includes('인연') ||
+                  log.eventTag?.includes('인카운터') ||
+                  log.eventTag?.includes('절단') ||
+                  log.eventTag?.includes('청소부') ||
+                  log.eventTag?.includes('시간세')
                     ? 'danger-event'
                     : ''
                 }`}
@@ -695,7 +771,7 @@ export default function App() {
             <div ref={logsEndRef} />
           </div>
 
-          {/* Action Choice Panel */}
+          {/* Action / Encounter Center Panel */}
           <div className="action-panel">
             {gameState.isGameOver ? (
               <div style={{ textAlign: 'center', padding: '1.5rem', background: 'rgba(214,40,40,0.15)', borderRadius: '8px', border: '1px solid var(--pm-crimson)' }}>
@@ -715,34 +791,83 @@ export default function App() {
                   새로운 생애 시작하기 (New Life)
                 </button>
               </div>
-            ) : (
-              <>
-                <div className="choices-grid">
-                  {gameState.currentChoices.map((choice) => (
+            ) : gameState.activeEncounter ? (
+              /* 돌발 인카운터 발생 시 나타나는 상황별 동적 선택지 카드 */
+              <div className={`active-encounter-box ${gameState.activeEncounter.category === 'NIGHT_SWEEPER_TERROR' ? 'crisis' : ''}`}>
+                <div className="encounter-header">
+                  <span className={`encounter-category-badge ${gameState.activeEncounter.category === 'NIGHT_SWEEPER_TERROR' ? 'crisis' : ''}`}>
+                    {gameState.activeEncounter.category === 'RELATIONSHIP_DISCOVERY' && '♥ 인연의 조우'}
+                    {gameState.activeEncounter.category === 'TCORP_AUDIT' && '⏳ T사 시간세 감사'}
+                    {gameState.activeEncounter.category === 'NIGHT_SWEEPER_TERROR' && '⚠ 청소부의 밤 습격'}
+                    {gameState.activeEncounter.category === 'FIXER_CONTRACT' && '📜 긴급 해결사 의뢰'}
+                    {gameState.activeEncounter.category === 'DISTRICT_SINGULARITY' && '🧪 특이점 암시장'}
+                    {gameState.activeEncounter.category === 'STREET_COMBAT' && '⚔ 골목 칼부림'}
+                    {gameState.activeEncounter.category === 'SHIN_CRISIS' && '★ 심연의 속삭임'}
+                  </span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    [시간 정지됨 - 결단 대기 중]
+                  </span>
+                </div>
+
+                <div className="encounter-title">{gameState.activeEncounter.title}</div>
+                <div className="encounter-desc">{gameState.activeEncounter.description}</div>
+                {gameState.activeEncounter.atmosphereQuote && (
+                  <div className="encounter-atmosphere">"{gameState.activeEncounter.atmosphereQuote}"</div>
+                )}
+
+                <div className="encounter-choices-grid">
+                  {gameState.activeEncounter.choices.map((choice) => (
                     <button
                       key={choice.id}
                       type="button"
                       disabled={isProcessing}
-                      className={`choice-btn ${choice.dangerLevel === 'HIGH' || choice.dangerLevel === 'EXTREME' ? 'danger-high' : ''}`}
+                      className={`encounter-choice-btn ${choice.dangerLevel === 'EXTREME' || choice.dangerLevel === 'HIGH' ? 'danger-extreme' : ''}`}
                       onClick={() => handleSelectChoice(choice)}
                     >
-                      <span style={{ fontWeight: 'bold' }}>{choice.text}</span>
-                      <span className="choice-badge">
-                        위험도: {choice.dangerLevel}
-                        {choice.costAhn ? ` | 비용: ${choice.costAhn}안` : ''}
-                        {choice.costTimeHours ? ` | 시간: -${choice.costTimeHours}h` : ''}
-                        {choice.rewardTimeHours ? ` | 시간: +${choice.rewardTimeHours}h` : ''}
-                      </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <strong style={{ fontSize: '0.92rem', color: 'var(--text-main)' }}>{choice.text}</strong>
+                        <span className="choice-badge">위험도: {choice.dangerLevel}</span>
+                      </div>
+                      {choice.description && (
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{choice.description}</p>
+                      )}
+                      <div className="choice-cost-pills">
+                        {choice.costAhn && <span className="cost-pill" style={{ color: '#ffb3ba' }}>비용: -{choice.costAhn}안</span>}
+                        {choice.rewardAhn && <span className="cost-pill" style={{ color: 'var(--pm-gold)' }}>보상: +{choice.rewardAhn}안</span>}
+                        {choice.costHp && <span className="cost-pill" style={{ color: '#ff4d6d' }}>체력: -{choice.costHp}</span>}
+                        {choice.costSp && <span className="cost-pill" style={{ color: '#9d4edd' }}>정신력: -{choice.costSp}</span>}
+                        {choice.costTimeHours && <span className="cost-pill" style={{ color: '#d4a373' }}>시간: -{choice.costTimeHours}h</span>}
+                        {choice.rewardTimeHours && <span className="cost-pill" style={{ color: '#faedcd' }}>시간: +{choice.rewardTimeHours}h</span>}
+                        {choice.recruitCharacter && <span className="cost-pill" style={{ color: '#ff99c8' }}>♥ 인연 등록</span>}
+                      </div>
                     </button>
                   ))}
                 </div>
+              </div>
+            ) : (
+              /* 인카운터가 없을 때: 고정 4개 선택지 대신 실시간 흐름 상태 표시 바 */
+              <div>
+                <div className="ambient-flow-bar">
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span className="pulse-indicator" style={{ background: gameState.timeSpeed === 'PAUSED' ? 'var(--pm-crimson)' : 'var(--pm-cyan)' }} />
+                    <span>
+                      {gameState.timeSpeed === 'PAUSED'
+                        ? '도시의 시간이 멈춰 있습니다. [Space] 키를 눌러 시간을 흐르게 하십시오.'
+                        : '도시의 시간이 흐르는 중입니다... (1분 = 1달) 거리의 인카운터를 주시하십시오.'}
+                    </span>
+                  </div>
+                  <div>
+                    <span>일시정지/재개</span>
+                    <kbd className="space-hotkey-badge">Space</kbd>
+                  </div>
+                </div>
 
-                {/* Free Text Input */}
-                <form className="custom-action-form" onSubmit={handleCustomActionSubmit}>
+                {/* Free Text Input (자유 행동/대화 입력) */}
+                <form className="custom-action-form" onSubmit={handleCustomActionSubmit} style={{ marginTop: '0.8rem' }}>
                   <input
                     type="text"
                     className="custom-input"
-                    placeholder="이곳에 자신만의 자유 행동이나 대화를 입력할 수 있습니다..."
+                    placeholder="이곳에 자신만의 자유 행동이나 대화를 입력하여 도시에 즉시 개입할 수 있습니다..."
                     value={customActionText}
                     onChange={(e) => setCustomActionText(e.target.value)}
                     disabled={isProcessing}
@@ -752,7 +877,7 @@ export default function App() {
                     {isProcessing ? '처리 중...' : '행동'}
                   </button>
                 </form>
-              </>
+              </div>
             )}
           </div>
         </main>
@@ -777,7 +902,7 @@ export default function App() {
                 cursor: 'pointer',
               }}
             >
-              인연·히로인
+              인연·히로인 ({p.relationships.length})
             </button>
             <button
               type="button"
@@ -826,39 +951,47 @@ export default function App() {
                   인연 목록 ({p.relationships.length}명)
                 </div>
 
-                {p.relationships.map((npc) => (
-                  <div key={npc.id} className="relationship-card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <strong style={{ fontSize: '0.9rem', color: 'var(--text-main)' }}>{npc.name}</strong>
-                      <span className="relationship-badge">{npc.title}</span>
-                    </div>
-
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
-                      관계 상태:{' '}
-                      <span style={{ color: npc.type === 'lover' ? '#ff4d6d' : 'var(--pm-cyan)', fontWeight: 'bold' }}>
-                        {npc.type === 'stranger' && '초면'}
-                        {npc.type === 'acquaintance' && '아는 사이'}
-                        {npc.type === 'ally' && '협력자'}
-                        {npc.type === 'vow_partner' && '맹세의 동료'}
-                        {npc.type === 'lover' && '♥ 연인 (Lover)'}
-                      </span>
-                    </div>
-
-                    <div style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                      <span>호감도:</span>
-                      <span style={{ color: 'var(--pm-gold)' }}>{npc.affection} / 100</span>
-                    </div>
-                    <div className="meter-track" style={{ height: '5px', marginBottom: '0.5rem' }}>
-                      <div style={{ height: '100%', width: `${npc.affection}%`, background: 'var(--pm-gold)' }} />
-                    </div>
-
-                    {npc.currentCrisis && (
-                      <div className="npc-crisis">
-                        <strong>당면한 위기:</strong> {npc.currentCrisis}
-                      </div>
-                    )}
+                {p.relationships.length === 0 ? (
+                  <div className="empty-relationships-placeholder">
+                    <Heart size={24} color="var(--text-dim)" style={{ margin: '0 auto 0.6rem', display: 'block' }} />
+                    아직 깊은 인연을 맺은 이가 없습니다.<br />
+                    도시의 거리에서 위기에 처한 이를 구출하거나 조우하십시오.
                   </div>
-                ))}
+                ) : (
+                  p.relationships.map((npc) => (
+                    <div key={npc.id} className="relationship-card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <strong style={{ fontSize: '0.9rem', color: 'var(--text-main)' }}>{npc.name}</strong>
+                        <span className="relationship-badge">{npc.title}</span>
+                      </div>
+
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
+                        관계 상태:{' '}
+                        <span style={{ color: npc.type === 'lover' ? '#ff4d6d' : 'var(--pm-cyan)', fontWeight: 'bold' }}>
+                          {npc.type === 'stranger' && '초면'}
+                          {npc.type === 'acquaintance' && '아는 사이'}
+                          {npc.type === 'ally' && '협력자'}
+                          {npc.type === 'vow_partner' && '맹세의 동료'}
+                          {npc.type === 'lover' && '♥ 연인 (Lover)'}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                        <span>호감도:</span>
+                        <span style={{ color: 'var(--pm-gold)' }}>{npc.affection} / 100</span>
+                      </div>
+                      <div className="meter-track" style={{ height: '5px', marginBottom: '0.5rem' }}>
+                        <div style={{ height: '100%', width: `${npc.affection}%`, background: 'var(--pm-gold)' }} />
+                      </div>
+
+                      {npc.currentCrisis && (
+                        <div className="npc-crisis">
+                          <strong>당면한 위기:</strong> {npc.currentCrisis}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             )}
 
@@ -1018,7 +1151,7 @@ export default function App() {
               Gemini API Key 설정
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-              Google Gemini API 키를 입력하시면 AI 서사 생성기가 매달 시간의 흐름에 따른 구역별/T사 고유 사건과 동적 선택지를 실시간으로 직조합니다. (키가 없어도 정밀 내장 룰 엔진으로 완전하게 플레이 가능합니다.)
+              Google Gemini API 키를 입력하시면 AI 서사 생성기가 매달 시간의 흐름과 거리의 돌발 인카운터를 프문 특유의 하드보일드 문체로 실시간 직조합니다. (키가 없어도 정밀 내장 룰 엔진으로 완전하게 플레이 가능합니다.)
             </p>
 
             <input

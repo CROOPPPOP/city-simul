@@ -10,7 +10,6 @@ import type {
 } from '../types/game';
 import type { TimeTickResult } from './timeKeeper';
 import { DISTRICTS_DATA } from './districtsData';
-import { generateInitialRelationship } from './relationshipsData';
 
 export class CoreEngine {
   /**
@@ -32,8 +31,6 @@ export class CoreEngine {
       leftLeg: 'healthy',
       rightLeg: 'healthy',
     };
-
-    const initialRelationship = generateInitialRelationship(gender, birthDistrictId);
 
     const isTCorp = birthDistrictId === 20;
 
@@ -81,7 +78,7 @@ export class CoreEngine {
       distortionProgress: 0,
       path: isNestBorn ? 'WING_FEATHER' : 'FIXER',
       fixerGrade: isNestBorn ? undefined : 9,
-      relationships: [initialRelationship],
+      relationships: [], // 인연은 기본 제공이 아닌 인카운터를 통해 맺어감
       taboo: {
         ai_violation: 0,
         clone_7days: 0,
@@ -112,19 +109,19 @@ export class CoreEngine {
       eventTag: isNestBorn ? '둥지의 깃털' : isTCorp ? 'T사 시간의 톱니바퀴' : '뒷골목의 탄생',
     };
 
-    const initialChoices = CoreEngine.generateChoices(player, 'MORNING', 1);
-
     return {
       year: 984,
       month: 1,
       day: 1,
       timeOfDay: 'MORNING',
       timeSpeed: '1X',
+      previousTimeSpeed: '1X',
       monthProgress: 0,
       isAutoPaused: false,
       player,
       logs: [initialLog],
-      currentChoices: initialChoices,
+      currentChoices: [], // 고정 선택지 제거, 인카운터 발생 시 동적으로 제공
+      activeEncounter: null,
       pendingSituation: null,
       isGameOver: false,
     };
@@ -470,6 +467,19 @@ export class CoreEngine {
         break;
       }
 
+      case 'RECRUIT_RELATIONSHIP': {
+        if (choice.recruitCharacter) {
+          const already = p.relationships.some((r) => r.name === choice.recruitCharacter!.name);
+          if (!already) {
+            p.relationships = [...p.relationships, choice.recruitCharacter];
+          }
+          narrative = choice.description || `${choice.recruitCharacter.name}(${choice.recruitCharacter.title})와(과) 연을 맺었습니다.`;
+          monologue = `이 차가운 콘크리트 도시에서 등을 맞댈 동료가 생겼다.`;
+          eventTag = '★ 새로운 인연';
+        }
+        break;
+      }
+
       case 'EVENT_CHOICE': {
         narrative = choice.description || `${choice.text}을(를) 완수했습니다.`;
         monologue = `결단을 내렸다. 앞으로 나아갈 뿐이다.`;
@@ -514,18 +524,45 @@ export class CoreEngine {
       eventTag,
     };
 
-    const nextChoices = isGameOver ? [] : CoreEngine.generateChoices(p, newTime, newDay);
-
     return {
       ...state,
       player: p,
       logs: [newLog, ...state.logs].slice(0, 50),
-      currentChoices: nextChoices,
-      pendingSituation: null, // 모달 닫기
+      currentChoices: [], // 인카운터 완료 시 선택지 닫음
+      activeEncounter: null, // 인카운터 모달 닫기
+      pendingSituation: null, // 월간 상황 닫기
       isAutoPaused: false,
-      timeSpeed: state.timeSpeed === 'PAUSED' ? '1X' : state.timeSpeed, // 행동 후 시간 재개
+      timeSpeed: state.previousTimeSpeed || (state.timeSpeed === 'PAUSED' ? '1X' : state.timeSpeed), // 행동 후 이전 시간으로 재개
       isGameOver,
       gameOverReason,
+    };
+  }
+
+  /**
+   * 돌발 인카운터 발생 및 시간 일시정지
+   */
+  static triggerEncounter(state: GameState, encounter: any): GameState {
+    const newLog: NarrativeLog = {
+      id: `log_enc_${Date.now()}`,
+      year: state.year,
+      month: state.month,
+      day: state.day,
+      timeOfDay: state.timeOfDay,
+      districtId: state.player.currentDistrictId,
+      text: `[돌발 인카운터: ${encounter.title}]\n${encounter.description}`,
+      internalMonologue: encounter.atmosphereQuote || '갑작스러운 사태에 반사적으로 무기를 쥐었다.',
+      carmenWhisper: encounter.carmenWhisper,
+      eventTag: encounter.category === 'RELATIONSHIP_DISCOVERY' ? '♥ 인연의 조우' : '🚨 돌발 인카운터',
+    };
+
+    return {
+      ...state,
+      activeEncounter: encounter,
+      currentChoices: encounter.choices,
+      previousTimeSpeed: state.timeSpeed !== 'PAUSED' ? state.timeSpeed : '1X',
+      timeSpeed: 'PAUSED',
+      isAutoPaused: true,
+      logs: [newLog, ...state.logs].slice(0, 50),
     };
   }
 

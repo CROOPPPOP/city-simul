@@ -10,10 +10,16 @@ export class AINarrativeDirector {
   private static STORAGE_KEY = 'pm_sim_gemini_api_key';
 
   static getSavedApiKey(): string {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return '';
+    }
     return localStorage.getItem(this.STORAGE_KEY) || '';
   }
 
   static saveApiKey(key: string): void {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return;
+    }
     localStorage.setItem(this.STORAGE_KEY, key.trim());
   }
 
