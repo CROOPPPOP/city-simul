@@ -285,6 +285,13 @@ export default function App() {
     setApiKeyModalOpen(false);
   };
 
+  // API Key 삭제/초기화
+  const handleClearApiKey = () => {
+    setGeminiApiKey('');
+    AINarrativeDirector.saveApiKey('');
+    setApiKeyModalOpen(false);
+  };
+
   // 캐릭터 생성 모달
   if (isCreating || !gameState) {
     return (
@@ -380,6 +387,38 @@ export default function App() {
                 🔪 23구 W사 (맛의 골목)
               </button>
             </div>
+          </div>
+
+          {/* Gemini API Key 영구 로컬 저장 입력창 */}
+          <div style={{ marginBottom: '1.2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Key size={13} color="var(--pm-cyan)" />
+                Gemini API Key (선택사항, 브라우저에 자동 영구 저장)
+              </label>
+              {geminiApiKey ? (
+                <span style={{ fontSize: '0.72rem', color: 'var(--pm-cyan)', fontWeight: 'bold' }}>
+                  ✓ 로컬 보관 중
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>미입력 (내장 룰 엔진 구동)</span>
+              )}
+            </div>
+            <input
+              type="password"
+              className="custom-input"
+              style={{ width: '100%', borderColor: geminiApiKey ? 'var(--pm-cyan)' : undefined }}
+              placeholder="AIzaSy... (한 번 입력하면 다음 접속 시에도 자동 유지됩니다)"
+              value={geminiApiKey}
+              onChange={(e) => {
+                const val = e.target.value;
+                setGeminiApiKey(val);
+                AINarrativeDirector.saveApiKey(val);
+              }}
+            />
+            <p style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '0.3rem' }}>
+              * 한 번 입력해두면 로컬 스토리지에 영구 보관되어 브라우저를 껐다 켜도 다시 입력할 필요가 없습니다.
+            </p>
           </div>
 
           <div style={{ background: 'rgba(214, 40, 40, 0.08)', border: '1px solid #4a151b', padding: '0.8rem', borderRadius: '6px', fontSize: '0.78rem', color: '#ffb3ba', margin: '1.2rem 0' }}>
@@ -1154,13 +1193,30 @@ export default function App() {
               Google Gemini API 키를 입력하시면 AI 서사 생성기가 매달 시간의 흐름과 거리의 돌발 인카운터를 프문 특유의 하드보일드 문체로 실시간 직조합니다. (키가 없어도 정밀 내장 룰 엔진으로 완전하게 플레이 가능합니다.)
             </p>
 
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                Gemini API Key
+              </label>
+              {geminiApiKey ? (
+                <span style={{ fontSize: '0.72rem', color: 'var(--pm-cyan)', fontWeight: 'bold' }}>
+                  ✓ 브라우저 로컬 저장소(localStorage) 보관 중
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>미등록</span>
+              )}
+            </div>
+
             <input
               type="password"
               className="custom-input"
-              style={{ width: '100%', marginBottom: '1.2rem' }}
-              placeholder="AIzaSy..."
+              style={{ width: '100%', marginBottom: '1.2rem', borderColor: geminiApiKey ? 'var(--pm-cyan)' : undefined }}
+              placeholder="AIzaSy... (입력 즉시 로컬에 영구 저장됩니다)"
               value={geminiApiKey}
-              onChange={(e) => setGeminiApiKey(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setGeminiApiKey(val);
+                AINarrativeDirector.saveApiKey(val);
+              }}
             />
 
             <div style={{ display: 'flex', gap: '0.6rem' }}>
@@ -1172,6 +1228,16 @@ export default function App() {
               >
                 저장 및 적용
               </button>
+              {geminiApiKey && (
+                <button
+                  type="button"
+                  className="action-submit-btn"
+                  style={{ background: 'rgba(214, 40, 40, 0.2)', borderColor: 'var(--pm-crimson)', color: '#ff6b6b' }}
+                  onClick={handleClearApiKey}
+                >
+                  키 삭제
+                </button>
+              )}
               <button
                 type="button"
                 className="action-submit-btn"
